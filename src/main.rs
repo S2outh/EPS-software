@@ -6,7 +6,7 @@ use embassy_time::Timer;
 use defmt::*;
 use embassy_executor::Spawner;
 use embassy_stm32::{
-    adc::Adc, bind_interrupts, can::{self, CanConfigurator, RxBuf, TxBuf}, gpio::{Input, Level, Output, Speed}, i2c::{self, I2c}, interrupt::typelevel::I2C1, peripherals, rcc::{self, mux::Fdcansel}, time::Hertz, Config
+    adc::Adc, bind_interrupts, can::{self, CanConfigurator, RxBuf, TxBuf}, gpio::{Input, Level, Output, Speed}, i2c::{self, I2c}, interrupt::typelevel::I2C2_3, peripherals, rcc::{self, mux::Fdcansel}, time::Hertz, Config
 };
 // use embedded_io_async::Write;
 // use heapless::Vec;
@@ -37,7 +37,7 @@ const TMP_RANGE_TENTH_DEG: i32 = 1280;
 
 // bin can interrupts
 bind_interrupts!(struct Irqs {
-    I2C1 => i2c::EventInterruptHandler<peripherals::I2C1>, i2c::ErrorInterruptHandler<peripherals::I2C1>;
+    I2C2_3 => i2c::EventInterruptHandler<peripherals::I2C2>, i2c::ErrorInterruptHandler<peripherals::I2C2>;
 //     TIM16_FDCAN_IT0 => can::IT0InterruptHandler<FDCAN1>;
 //     TIM17_FDCAN_IT1 => can::IT1InterruptHandler<FDCAN1>;
 });
@@ -75,7 +75,7 @@ async fn main(_spawner: Spawner) {
     // let mut bat_1_adc_ch = p.PA4;//.degrade_adc();
     // let bat_1_stat = Input::new(p.PC14, embassy_stm32::gpio::Pull::None);
     
-    let mut temp_sensor_i2c = I2c::new(p.I2C1, p.PB8, p.PB9, Irqs, p.DMA1_CH1, p.DMA1_CH2, Hertz::khz(400), i2c::Config::default());
+    let mut temp_sensor_i2c = I2c::new(p.I2C2, p.PA7, p.PA6, Irqs, p.DMA1_CH1, p.DMA1_CH2, Hertz::khz(400), i2c::Config::default());
     temp_sensor_i2c.write(TMP_ADDR_FLT, &[0b01, 0b01100000]).await.unwrap(); // settings reg
     temp_sensor_i2c.write(TMP_ADDR_FLT, &[0b00]).await.unwrap(); // tmp reg
 

@@ -1,61 +1,64 @@
 #![no_std]
 #![no_main]
 
-use core::cmp::min;
-
 use embassy_time::Timer;
-use embedded_hal::adc::Channel;
-use rodos_can_interface::{RodosCanInterface, receiver::RodosCanReceiver, sender::RodosCanSender};
+// use rodos_can_interface::{RodosCanInterface, receiver::RodosCanReceiver, sender::RodosCanSender};
 use defmt::*;
 use embassy_executor::Spawner;
-use embassy_futures::join::join;
 use embassy_stm32::{
-    adc::{Adc, AdcChannel}, bind_interrupts, can::{self, CanConfigurator, RxBuf, TxBuf}, gpio::{Input, Level, Output, Speed}, mode::Async, peripherals::*, rcc::{self, mux::Fdcansel}, usart::{self, Uart, UartRx, UartTx}, Config
+    adc::Adc, bind_interrupts, can::{self, CanConfigurator, RxBuf, TxBuf}, gpio::{Input, Level, Output, Speed}, i2c::{self, I2c}, interrupt::typelevel::I2C1, peripherals, rcc::{self, mux::Fdcansel}, time::Hertz, Config
 };
-use embedded_io_async::Write;
-use heapless::Vec;
+// use embedded_io_async::Write;
+// use heapless::Vec;
 
 use {defmt_rtt as _, panic_probe as _};
 
-use static_cell::StaticCell;
+// use static_cell::StaticCell;
 
-const RODOS_DEVICE_ID: u8 = 0x01;
-const RODOS_REC_TOPIC_ID: u16 = 4000;
-const RODOS_SND_TOPIC_ID: u16 = 4001;
+// const RODOS_DEVICE_ID: u8 = 0x01;
+// const RODOS_REC_TOPIC_ID: u16 = 4000;
+// const RODOS_SND_TOPIC_ID: u16 = 4001;
+// 
+// const RODOS_MAX_RAW_MSG_LEN: usize = 247;
+// 
+// const RX_BUF_SIZE: usize = 500;
+// const TX_BUF_SIZE: usize = 30;
+//
+const TMP_ADDR_GND: u8 = 0b1001000;
+const TMP_ADDR_FLT: u8 = 0b1001001;
+const TMP_ADDR_HIG: u8 = 0b1001010;
 
-const RODOS_MAX_RAW_MSG_LEN: usize = 247;
+const POW11: i32 = 2048;
+const TMP_RANGE_TENTH_DEG: i32 = 1280;
 
-const RX_BUF_SIZE: usize = 500;
-const TX_BUF_SIZE: usize = 30;
 
-static RX_BUF: StaticCell<embassy_stm32::can::RxBuf<RX_BUF_SIZE>> = StaticCell::new();
-static TX_BUF: StaticCell<embassy_stm32::can::TxBuf<TX_BUF_SIZE>> = StaticCell::new();
+// static RX_BUF: StaticCell<embassy_stm32::can::RxBuf<RX_BUF_SIZE>> = StaticCell::new();
+// static TX_BUF: StaticCell<embassy_stm32::can::TxBuf<TX_BUF_SIZE>> = StaticCell::new();
 
 // bin can interrupts
 bind_interrupts!(struct Irqs {
-    TIM16_FDCAN_IT0 => can::IT0InterruptHandler<FDCAN1>;
-    TIM17_FDCAN_IT1 => can::IT1InterruptHandler<FDCAN1>;
-    USART3_4_5_6_LPUART1 => usart::InterruptHandler<USART5>;
-    // USART2_LPUART2 => usart::InterruptHandler<USART2>;
+    I2C1 => i2c::EventInterruptHandler<peripherals::I2C1>, i2c::ErrorInterruptHandler<peripherals::I2C1>;
+//     TIM16_FDCAN_IT0 => can::IT0InterruptHandler<FDCAN1>;
+//     TIM17_FDCAN_IT1 => can::IT1InterruptHandler<FDCAN1>;
 });
 
 /// config rcc for higher sysclock and fdcan periph clock to make sure
 /// all messages can be received without package drop
-fn get_rcc_config() -> rcc::Config {
-    let mut rcc_config = rcc::Config::default();
-    rcc_config.hsi = true;
-    rcc_config.sys = rcc::Sysclk::PLL1_R;
-    rcc_config.pll = Some(rcc::Pll {
-        source: rcc::PllSource::HSI,
-        prediv: rcc::PllPreDiv::DIV1,
-        mul: rcc::PllMul::MUL8,
-        divp: None,
-        divq: Some(rcc::PllQDiv::DIV2),
-        divr: Some(rcc::PllRDiv::DIV2),
-    });
-    rcc_config.mux.fdcansel = Fdcansel::PLL1_Q;
-    rcc_config
-}
+// fn get_rcc_config() -> rcc::Config {
+//     let mut rcc_config = rcc::Config::default();
+//     rcc_config.hsi = true;
+//     rcc_config.sys = rcc::Sysclk::PLL1_R;
+//     rcc_config.pll = Some(rcc::Pll {
+//         source: rcc::PllSource::HSI,
+//         prediv: rcc::PllPreDiv::DIV1,
+//         mul: rcc::PllMul::MUL8,
+//         divp: None,
+//         divq: Some(rcc::PllQDiv::DIV2),
+//         divr: Some(rcc::PllRDiv::DIV2),
+//     });
+//     rcc_config.mux.fdcansel = Fdcansel::PLL1_Q;
+//     rcc_config
+// }
 
 /// program entry
 #[embassy_executor::main]
@@ -66,16 +69,20 @@ async fn main(_spawner: Spawner) {
     info!("Launching");
 
     // let mut test_pin = Output::new(p.PA5, Level::Low, Speed::Medium);
-    let mut bat_1_sw = Output::new(p.PB3, Level::Low, Speed::Medium);
-    let mut bat_1_clk = Output::new(p.PB6, Level::Low, Speed::Medium);
-    let mut adc = Adc::new(p.ADC1);
-    let mut bat_1_adc_ch = p.PA4.degrade_adc();
-    let bat_1_stat = Input::new(p.PC14, embassy_stm32::gpio::Pull::None);
+    // let mut bat_1_sw = Output::new(p.PB3, Level::Low, Speed::Medium);
+    // let mut bat_1_clk = Output::new(p.PB6, Level::Low, Speed::Medium);
+    // let mut adc = Adc::new(p.ADC1);
+    // let mut bat_1_adc_ch = p.PA4;//.degrade_adc();
+    // let bat_1_stat = Input::new(p.PC14, embassy_stm32::gpio::Pull::None);
+    
+    let mut temp_sensor_i2c = I2c::new(p.I2C1, p.PB8, p.PB9, Irqs, p.DMA1_CH1, p.DMA1_CH2, Hertz::khz(400), i2c::Config::default());
+    temp_sensor_i2c.write(TMP_ADDR_FLT, &[0b01, 0b01100000]).await.unwrap(); // settings reg
+    temp_sensor_i2c.write(TMP_ADDR_FLT, &[0b00]).await.unwrap(); // tmp reg
 
-    let mut led1 = Output::new(p.PB7, Level::High, Speed::Medium);
-    let mut led2 = Output::new(p.PB8, Level::Low, Speed::Medium);
+    // let mut led1 = Output::new(p.PB7, Level::High, Speed::Medium);
+    // let mut led2 = Output::new(p.PB8, Level::Low, Speed::Medium);
 
-    let mut counter = 4;
+    // let mut counter = 4;
 
     // -- CAN configuration
     // let (can_reader, can_sender, _active_instance) = RodosCanInterface::new(
@@ -92,18 +99,23 @@ async fn main(_spawner: Spawner) {
     // let _can_standby = Output::new(p.PA10, Level::Low, Speed::Low);
 
     loop {
-        led1.set_level((counter & 1 == 1).into());
-        led2.set_level(((counter >> 1) & 1 == 1).into());
-        info!("current state: {}", bat_1_stat.get_level());
-        info!("current voltage: {}", adc.blocking_read(&mut bat_1_adc_ch));
-        counter -= 1;
-        if counter < 0 {
-            bat_1_sw.toggle();
-            bat_1_clk.set_high();
-            Timer::after_millis(1).await;
-            bat_1_clk.set_low();
-            counter = 15;
-        }
+        let mut buffer = [0u8; 2];
+        temp_sensor_i2c.read(TMP_ADDR_FLT, &mut buffer).await.unwrap();
+        let tmp_raw = (buffer[0] as i32) << 4 | (buffer[1] as i32) >> 4;
+        let tmp_tenth_deg = (tmp_raw * TMP_RANGE_TENTH_DEG) / POW11;
+        info!("tmp: {}", tmp_tenth_deg);
+    //     led1.set_level((counter & 1 == 1).into());
+    //     led2.set_level(((counter >> 1) & 1 == 1).into());
+    //     info!("current state: {}", bat_1_stat.get_level());
+    //     info!("current voltage: {}", adc.blocking_read(&mut bat_1_adc_ch));
+    //     counter -= 1;
+    //     if counter < 0 {
+    //         bat_1_sw.toggle();
+    //         bat_1_clk.set_high();
+    //         Timer::after_millis(1).await;
+    //         bat_1_clk.set_low();
+    //         counter = 15;
+    //     }
         Timer::after_secs(1).await;
     }
 }

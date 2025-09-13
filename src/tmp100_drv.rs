@@ -1,6 +1,6 @@
-use embassy_stm32::{i2c::{I2c, Error}, mode::Async};
-use embassy_sync::mutex::Mutex;
+#[allow(dead_code)]
 
+use embassy_stm32::{i2c::{I2c, Error}, mode::Async};
 
 const TEMP_RANGE_TENTH_DEG: i32 = 128_0;
 

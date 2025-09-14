@@ -1,18 +1,23 @@
 #![no_std]
 #![no_main]
 
+#[allow(dead_code)]
 
-mod tmp100_drv;
+mod battery;
+
+use battery::{Battery, tmp100_drv::*, d_flip_flop::DFlipFlop};
+use embassy_time::Timer;
+
+use core::cell::RefCell;
 
 use rodos_can_interface::{RodosCanInterface, receiver::RodosCanReceiver, sender::RodosCanSender};
 use defmt::*;
 use embassy_executor::Spawner;
 use embassy_stm32::{
-    adc::Adc, bind_interrupts, can::{self, CanConfigurator, RxBuf, TxBuf}, gpio::{Input, Level, Output, Speed}, i2c::{self, I2c}, interrupt::typelevel::I2C2_3, peripherals::{self, FDCAN1}, rcc::{self, mux::Fdcansel}, time::Hertz, Config
+    adc::{Adc, AdcChannel}, bind_interrupts, can::{self, CanConfigurator, RxBuf, TxBuf}, gpio::{Input, Level, Output, Speed}, i2c::{self, I2c}, peripherals::{self, FDCAN1, IWDG}, rcc::{self, mux::Fdcansel}, time::Hertz, wdg::IndependentWatchdog, Config
 };
 // use embedded_io_async::Write;
 
-use crate::tmp100_drv::{Addr0State, Resolution, Tmp100};
 
 use {defmt_rtt as _, panic_probe as _};
 
@@ -36,6 +41,14 @@ bind_interrupts!(struct Irqs {
     TIM16_FDCAN_IT0 => can::IT0InterruptHandler<FDCAN1>;
     TIM17_FDCAN_IT1 => can::IT1InterruptHandler<FDCAN1>;
 });
+
+/// Watchdog petting task
+async fn petter(mut watchdog: IndependentWatchdog<'_, IWDG>) {
+    loop {
+        watchdog.pet();
+        Timer::after_millis(200).await;
+    }
+}
 
 /// config rcc for higher sysclock and fdcan periph clock to make sure
 /// all messages can be received without package drop
@@ -63,18 +76,23 @@ async fn main(_spawner: Spawner) {
     let p = embassy_stm32::init(config);
     info!("Launching");
 
+    // independent watchdog with timeout 300 MS
+    // let mut watchdog = IndependentWatchdog::new(p.IWDG, 300_000);
+    // watchdog.unleash();
+
     // let mut test_pin = Output::new(p.PA5, Level::Low, Speed::Medium);
-    // let mut bat_1_sw = Output::new(p.PB3, Level::Low, Speed::Medium);
-    // let mut bat_1_clk = Output::new(p.PB6, Level::Low, Speed::Medium);
-    // let mut adc = Adc::new(p.ADC1);
-    // let mut bat_1_adc_ch = p.PA4;//.degrade_adc();
+    let mut adc = Adc::new(p.ADC1);
+    // let mut bat_1_adc_ch = AdcChannel::degrade_adc(p.PA4;
     // let bat_1_stat = Input::new(p.PC14, embassy_stm32::gpio::Pull::None);
     
-    let temp_sensor_i2c = I2c::new(p.I2C2, p.PA7, p.PA6, Irqs, p.DMA1_CH1, p.DMA1_CH2, Hertz::khz(400), i2c::Config::default());
-    let mut bat_1_tmp = Tmp100::new(temp_sensor_i2c, Resolution::Res9Bit, Addr0State::Floating).await.unwrap();
+    let temp_sensor_i2c = RefCell::new(I2c::new(p.I2C2, p.PA7, p.PA6, Irqs, p.DMA1_CH1, p.DMA1_CH2, Hertz::khz(400), i2c::Config::default()));
+    let bat_1_tmp = Tmp100::new(&temp_sensor_i2c, Resolution::Res9Bit, Addr0State::Floating).await.unwrap();
+    let bat_1_enable = DFlipFlop::new(p.PB3, p.PB6);
+    let bat_1 = Battery::new(bat_1_tmp, bat_1_enable).await;
 
-    // let mut led1 = Output::new(p.PB7, Level::High, Speed::Medium);
-    // let mut led2 = Output::new(p.PB8, Level::Low, Speed::Medium);
+    // these led's turn off can
+    let _led1 = Output::new(p.PB7, Level::Low, Speed::Medium);
+    let _led2 = Output::new(p.PB8, Level::Low, Speed::Medium);
 
     // let mut counter = 4;
 
@@ -95,27 +113,28 @@ async fn main(_spawner: Spawner) {
 
     // set can standby pin to low
     let _can_standby = Output::new(p.PA10, Level::Low, Speed::Low);
+    let _can_standby2 = Output::new(p.PB2, Level::High, Speed::Low);
 
     loop {
-        let tmp_tenth_deg = bat_1_tmp.read_temp().await.unwrap();
-        info!("tmp: {}", tmp_tenth_deg);
-        // led1.set_level((counter & 1 == 1).into());
-        // led2.set_level(((counter >> 1) & 1 == 1).into());
+        // led2.toggle();
         // info!("current state: {}", bat_1_stat.get_level());
         // info!("current voltage: {}", adc.blocking_read(&mut bat_1_adc_ch));
+        // led1.set_level((counter & 1 == 1).into());
+        // led2.set_level(((counter >> 1) & 1 == 1).into());
         // counter -= 1;
         // if counter < 0 {
-        //     bat_1_sw.toggle();
-        //     bat_1_clk.set_high();
-        //     Timer::after_millis(1).await;
-        //     bat_1_clk.set_low();
-        //     counter = 15;
+        //     // bat_1_sw.toggle();
+        //     // bat_1_clk.set_high();
+        //     // Timer::after_millis(1).await;
+        //     // bat_1_clk.set_low();
+        //     counter = 4;
         // }
-        // Timer::after_secs(1).await;
+        //
   
         match can_reader.receive().await {
             Ok(frame) => {
                 if frame.data()[0] != 0x00 { //power subsystemid
+                    info!("wrong cmd");
                     continue;
                 }
                 info!("command: {}", frame.data()[1]);

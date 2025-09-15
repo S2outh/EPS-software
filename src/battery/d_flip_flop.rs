@@ -16,7 +16,7 @@ impl<'a> DFlipFlop<'a> {
     pub async fn set(&mut self, level: Level) {
         self.d_pin.set_level(level);
         self.clk_pin.set_high();
-        Timer::after_millis(10).await;
+        Timer::after_micros(10).await;
         self.clk_pin.set_low();
     }
 }

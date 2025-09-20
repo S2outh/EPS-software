@@ -7,6 +7,7 @@ const POWER_CMD_SUBSYSTEM_ID: u8 = 0x00;
 #[derive(Format)]
 pub(super) struct ParseError(&'static str);
 
+#[derive(Format)]
 pub(super) enum Telecommand {
     SetSource(FlipFlopState),
     EnableSink(Sink),
@@ -15,7 +16,7 @@ pub(super) enum Telecommand {
 
 // these parse only for pure repr[u8] enums. which these are.
 impl FlipFlopState {
-    pub(super) fn from_u8(uint: u8) -> Result<FlipFlopState, ParseError> {
+    fn from_u8(uint: u8) -> Result<FlipFlopState, ParseError> {
         if uint >= 4 {
             Err(ParseError("flipflop state out of bounds"))
         } else { unsafe { Ok(core::mem::transmute(uint)) }}
@@ -23,7 +24,7 @@ impl FlipFlopState {
 }
 
 impl Sink {
-    pub(super) fn from_u8(uint: u8) -> Result<Sink, ParseError> {
+    fn from_u8(uint: u8) -> Result<Sink, ParseError> {
         if uint >= 3 {
             Err(ParseError("sink id out of bounds"))
         } else { unsafe { Ok(core::mem::transmute(uint)) }}

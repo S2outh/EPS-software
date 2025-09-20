@@ -1,6 +1,8 @@
 use embassy_stm32::{gpio::{Level, Output, Pin, Speed}, Peri};
+use defmt::Format;
 
 #[repr(u8)]
+#[derive(Format)]
 pub enum Sink {
     Mainboard,
     RocketLST,
@@ -24,25 +26,20 @@ impl<'d> SinkCtrl<'d> {
         let rhd_enable = Output::new(rhd_enable, Level::High, Speed::High);
         Self { mb_enable, lst_enable, rhd_enable }
     }
-    pub fn enable(&mut self, sink: Sink) {
+    fn get(&mut self, sink: Sink) -> &mut Output<'d> {
         match sink {
-            Sink::Mainboard => self.mb_enable.set_high(),
-            Sink::RocketLST => self.lst_enable.set_high(),
-            Sink::RocketHD => self.rhd_enable.set_high(),
+            Sink::Mainboard => &mut self.mb_enable,
+            Sink::RocketLST => &mut self.lst_enable,
+            Sink::RocketHD => &mut self.rhd_enable,
         }
+    }
+    pub fn enable(&mut self, sink: Sink) {
+        self.get(sink).set_high()
     }
     pub fn disable(&mut self, sink: Sink) {
-        match sink {
-            Sink::Mainboard => self.mb_enable.set_low(),
-            Sink::RocketLST => self.lst_enable.set_low(),
-            Sink::RocketHD => self.rhd_enable.set_low(),
-        }
+        self.get(sink).set_low()
     }
-    pub fn get(&self, sink: Sink) -> bool {
-        match sink {
-            Sink::Mainboard => self.mb_enable.is_set_high(),
-            Sink::RocketLST => self.lst_enable.is_set_high(),
-            Sink::RocketHD => self.rhd_enable.is_set_high(),
-        }
+    pub fn is_enabled(&mut self, sink: Sink) -> bool {
+        self.get(sink).is_set_high()
     }
 }

@@ -8,7 +8,7 @@ use static_cell::StaticCell;
 
 use crate::control_loop::telecommands::Telecommand;
 use crate::pwr_src::d_flip_flop::DFlipFlop;
-use crate::pwr_src::sink_ctrl::SinkCtrl;
+use crate::pwr_src::sink_ctrl::{Sink, SinkCtrl};
 
 use super::pwr_src::battery::Battery;
 use super::pwr_src::aux_pwr::AuxPwr;
@@ -71,15 +71,45 @@ impl<'a, 'd> ControlLoop<'a, 'd> {
     }
 
     pub async fn handle_cmd(&mut self, data: &[u8]) {
-        info!("received tc");
         match Telecommand::parse(data) {
-            Ok(telecommand) => match telecommand {
-                Telecommand::SetSource(state) => self.source_flip_flop.set(state).await,
-                Telecommand::EnableSink(sink) => self.sink_ctrl.enable(sink),
-                Telecommand::DisableSink(sink) => self.sink_ctrl.disable(sink),
+            Ok(telecommand) => {
+                info!("tc: {}", telecommand);
+                match telecommand {
+                    Telecommand::SetSource(state) => self.source_flip_flop.set(state).await,
+                    Telecommand::EnableSink(sink) => self.sink_ctrl.enable(sink),
+                    Telecommand::DisableSink(sink) => self.sink_ctrl.disable(sink),
+                }
             },
             Err(e) => error!("{}", e),
         }
+    }
+    pub async fn send_tm(&mut self) {
+        self.can_tranciever.send(RODOS_TELEM_BAT_1_TMP_TOPIC_ID,
+            &self.bat_1.get_temperature().await.to_le_bytes()).await
+            .unwrap_or_else(|e| error!("could not send bat 1 tmp: {}", e));
+
+        self.can_tranciever.send(RODOS_TELEM_INERNAL_TMP_TOPIC_ID,
+            &self.internal_temperature.get().await.to_le_bytes()).await
+            .unwrap_or_else(|e| error!("could not send internal tmp: {}", e));
+
+        self.can_tranciever.send(RODOS_TELEM_BAT_1_VOLTAGE_TOPIC_ID,
+            &self.bat_1.get_voltage().await.to_le_bytes()).await
+            .unwrap_or_else(|e| error!("could not send bat 1 voltage: {}", e));
+
+        self.can_tranciever.send(RODOS_TELEM_AUX_PWR_VOLTAGE_TOPIC_ID,
+            &self.aux_pwr.get_voltage().await.to_le_bytes()).await
+            .unwrap_or_else(|e| error!("could not send aux pwr voltage: {}", e));
+
+        let bitmap: u8 = 
+            self.bat_1.is_enabled() as u8 |
+            (self.aux_pwr.is_enabled() as u8) << 1 |
+            (self.sink_ctrl.is_enabled(Sink::Mainboard) as u8) << 2 |
+            (self.sink_ctrl.is_enabled(Sink::RocketLST) as u8) << 3 |
+            (self.sink_ctrl.is_enabled(Sink::RocketHD) as u8) << 4;
+
+        self.can_tranciever.send(RODOS_TELEM_ENABLE_BM_TOPIC_ID,
+            &[bitmap]).await
+            .unwrap_or_else(|e| error!("could not send enable bm: {}", e));
     }
 
     pub async fn run(&mut self) {
@@ -90,7 +120,7 @@ impl<'a, 'd> ControlLoop<'a, 'd> {
                     data[..frame.data().len()].copy_from_slice(frame.data());
                     match frame.topic() {
                         RODOS_CMD_TOPIC_ID => self.handle_cmd(&data).await,
-                        RODOS_TELEM_REQ_TOPIC_ID => {},
+                        RODOS_TELEM_REQ_TOPIC_ID => self.send_tm().await,
                         _ => error!("impossible topic: {}", frame.topic()),
                     }
                                     }

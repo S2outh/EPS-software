@@ -1,7 +1,9 @@
 use embassy_stm32::{gpio::{Level, Output, Pin, Speed}, Peri};
 use embassy_time::Timer;
+use defmt::Format;
 
 #[repr(u8)]
+#[derive(Format)]
 pub enum FlipFlopState {
     Off,
     Bat1,

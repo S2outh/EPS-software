@@ -79,7 +79,7 @@ impl<'a, 'd> Tmp100<'a, 'd> {
     }
     pub async fn read_temp_raw(&mut self) -> Result<i32, Error> {
         let mut buffer = [0u8; 2];
-        self.interface.lock().await.write(self.addr_state.get_addr(), &mut buffer).await.unwrap();
+        self.interface.lock().await.read(self.addr_state.get_addr(), &mut buffer).await?;
         let bitshift = self.resolution.get_bit_shift();
         let tmp_raw = (buffer[0] as i32) << bitshift | (buffer[1] as i32) >> (8 - bitshift);
         Ok(tmp_raw)

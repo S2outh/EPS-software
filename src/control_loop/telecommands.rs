@@ -2,7 +2,7 @@ use defmt::Format;
 
 use crate::pwr_src::{d_flip_flop::FlipFlopState, sink_ctrl::Sink};
 
-const POWER_CMD_SUBSYSTEM_ID: u8 = 0x00;
+const POWER_CMD_SUBSYSTEM_ID: u8 = 0x01;
 
 #[derive(Format)]
 pub(super) struct ParseError(&'static str);

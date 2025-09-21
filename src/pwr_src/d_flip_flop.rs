@@ -34,24 +34,24 @@ impl<'d> DFlipFlop<'d> {
     pub async fn set(&mut self, state: FlipFlopState) {
         match state {
             FlipFlopState::Off => {
-                self.d_bat_1.set_low();
-                self.d_bat_2.set_low();
-                self.d_aux_pwr.set_low();
+                self.d_bat_1.set_high();
+                self.d_bat_2.set_high();
+                self.d_aux_pwr.set_high();
             },
             FlipFlopState::Bat1 => {
-                self.d_bat_1.set_high();
-                self.d_bat_2.set_low();
-                self.d_aux_pwr.set_low();
-            },
-            FlipFlopState::Bat2 => {
                 self.d_bat_1.set_low();
                 self.d_bat_2.set_high();
-                self.d_aux_pwr.set_low();
-            }
-            FlipFlopState::AuxPwr => {
-                self.d_bat_1.set_low();
+                self.d_aux_pwr.set_high();
+            },
+            FlipFlopState::Bat2 => {
+                self.d_bat_1.set_high();
                 self.d_bat_2.set_low();
                 self.d_aux_pwr.set_high();
+            }
+            FlipFlopState::AuxPwr => {
+                self.d_bat_1.set_high();
+                self.d_bat_2.set_high();
+                self.d_aux_pwr.set_low();
             },
         }
         self.clk.set_high();

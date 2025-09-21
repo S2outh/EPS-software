@@ -137,9 +137,13 @@ impl<'a, 'd> ControlLoop<'a, 'd> {
     }
 
     async fn run_standby(&mut self) {
-        if !self.aux_pwr.is_enabled() {
+        if self.aux_pwr.get_voltage().await < 8_00 {
             self.source_flip_flop.set(FlipFlopState::Bat1).await;
+            self.state = SystemState::Online;
+            info!("on");
+            return;
         }
+        info!("{}", self.aux_pwr.get_voltage().await);
         Timer::after_millis(50).await;
     }
 

@@ -105,7 +105,7 @@ async fn main(_spawner: Spawner) {
     source_flip_flop.set(pwr_src::d_flip_flop::FlipFlopState::Off).await;
 
     // sink ctrl
-    let sink_ctrl = SinkCtrl::new(p.PA5, p.PA9, p.PA15);
+    let sink_ctrl = SinkCtrl::new(p.PA9, p.PA5, p.PA0, p.PA15);
 
     // first battery
     let bat_1_tmp = Tmp100::new(&temp_sensor_i2c, Resolution::BITS12, Addr0State::Floating).await.unwrap();

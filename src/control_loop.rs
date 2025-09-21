@@ -122,6 +122,13 @@ impl<'a, 'd> ControlLoop<'a, 'd> {
     }
     
     async fn run_online(&mut self) {
+        // if critical systems are not online, wait for 1 second then enable them
+        if !self.sink_ctrl.is_critical_enabled() || (!self.bat_1.is_enabled() && !self.aux_pwr.is_enabled()) {
+            Timer::after_secs(1).await;
+            self.sink_ctrl.enable_critical();
+            self.source_flip_flop.set(FlipFlopState::Bat1).await;
+        }
+        // control over can connection
         match self.can_tranciever.receive().await {
             Ok(frame) => {
                 let mut data = [0; RODOS_MAX_RAW_MSG_LEN];
@@ -140,10 +147,8 @@ impl<'a, 'd> ControlLoop<'a, 'd> {
         if self.aux_pwr.get_voltage().await < 8_00 {
             self.source_flip_flop.set(FlipFlopState::Bat1).await;
             self.state = SystemState::Online;
-            info!("on");
             return;
         }
-        info!("{}", self.aux_pwr.get_voltage().await);
         Timer::after_millis(50).await;
     }
 

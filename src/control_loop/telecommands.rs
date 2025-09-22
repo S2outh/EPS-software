@@ -35,9 +35,8 @@ impl Telecommand {
     pub fn parse(data: &[u8]) -> Result<Self, ParseError> {
         if data.len() < 5 { return Err(ParseError("length of data to short")); }
         if data[0] != POWER_CMD_SUBSYSTEM_ID { return Err(ParseError("cmd for other subsystem")); }
-        // payload length is an u16
-        let payload_length = (data[3] as usize) << 8 | (data[2] as usize);
-        let payload = &data[4..4+payload_length];
+        let payload_length = data[2] as usize;
+        let payload = &data[3..3+payload_length];
         Ok(match data[1] {
             0x00 => Self::SetSource(FlipFlopState::from_u8(payload[0])?),
             0x01 => Self::EnableSink(Sink::from_u8(payload[0])?),

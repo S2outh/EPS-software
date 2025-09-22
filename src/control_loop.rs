@@ -27,6 +27,8 @@ enum TopicId {
     TelemAuxPwrVoltage = 1414,
 }
 
+const ACTIVATION_VOLTAGE_THRESHHOLD_10X_MV: i16 = 12_00;
+
 const RODOS_MAX_RAW_MSG_LEN: usize = 32;
 const NUMBER_OF_SENDING_DEVICES: usize = 4;
 
@@ -151,7 +153,7 @@ impl<'a, 'd> ControlLoop<'a, 'd> {
     }
 
     async fn run_standby(&mut self) {
-        if self.aux_pwr.get_voltage().await < 8_00 {
+        if self.aux_pwr.get_voltage().await < ACTIVATION_VOLTAGE_THRESHHOLD_10X_MV {
             self.source_flip_flop.set(FlipFlopState::Bat1).await;
             self.state = SystemState::Online;
             return;

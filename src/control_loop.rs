@@ -147,7 +147,7 @@ impl<'a, 'd> ControlLoop<'a, 'd> {
                     RODOS_TELEM_REQ_TOPIC_ID => self.send_tm().await,
                     _ => error!("impossible topic: {}", frame.topic()),
                 }
-                                }
+            }
             Err(e) => error!("error in frame! {}", e),
         };
     }

@@ -24,7 +24,7 @@ impl<'a, 'd> Battery<'a, 'd> {
         self.temp_probe.read_temp().await.unwrap_or(-100)
     }
     pub fn is_enabled(&self) -> bool {
-        self.bat_status.is_low()
+        self.bat_status.is_high()
     }
     pub async fn get_voltage(&mut self) -> i16 {
         self.adc_recv.get().await

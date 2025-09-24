@@ -131,11 +131,11 @@ impl<'a, 'd> ControlLoop<'a, 'd> {
         const RODOS_TELEM_REQ_TOPIC_ID: u16 = TopicId::TelemReq as u16;
 
         // if critical systems are not online, wait for 1 second then enable them
-        if !self.sink_ctrl.is_critical_enabled() || (!self.bat_1.is_enabled() && !self.aux_pwr.is_enabled()) {
-            Timer::after_secs(1).await;
-            self.sink_ctrl.enable_critical();
-            self.source_flip_flop.set(FlipFlopState::Bat1).await;
-        }
+        // if !self.sink_ctrl.is_critical_enabled() || (!self.bat_1.is_enabled() && !self.aux_pwr.is_enabled()) {
+        //     Timer::after_secs(1).await;
+        //     self.sink_ctrl.enable_critical();
+        //     self.source_flip_flop.set(FlipFlopState::Bat1).await;
+        // }
 
         // control over can connection
         match self.can_tranciever.receive().await {

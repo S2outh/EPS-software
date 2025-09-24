@@ -17,7 +17,7 @@ impl<'a, 'd> AuxPwr<'a, 'd> {
         }
     }
     pub fn is_enabled(&self) -> bool {
-        self.aux_pwr_status.is_low()
+        self.aux_pwr_status.is_high()
     }
     pub async fn get_voltage(&mut self) -> i16 {
         self.adc_recv.get().await

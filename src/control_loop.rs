@@ -27,7 +27,7 @@ enum TopicId {
     TelemAuxPwrVoltage = 1414,
 }
 
-const ACTIVATION_VOLTAGE_THRESHHOLD_10X_MV: i16 = 12_00;
+const ACTIVATION_VOLTAGE_THRESHHOLD_10X_MV: i16 = 15_00;
 
 const RODOS_MAX_RAW_MSG_LEN: usize = 32;
 const NUMBER_OF_SENDING_DEVICES: usize = 4;
@@ -88,8 +88,25 @@ impl<'a, 'd> ControlLoop<'a, 'd> {
                 info!("tc: {}", telecommand);
                 match telecommand {
                     Telecommand::SetSource(state) => self.source_flip_flop.set(state).await,
-                    Telecommand::EnableSink(sink) => self.sink_ctrl.enable(sink),
-                    Telecommand::DisableSink(sink) => self.sink_ctrl.disable(sink),
+                    Telecommand::EnableSink(sink, time) => {
+                        self.sink_ctrl.enable(sink);
+                        if time == 0 {
+                            return;
+                        }
+                        // this is blocking and prevents tm/tc during timeout.
+                        // might be good to fix in the future
+                        Timer::after_secs(time as u64).await;
+                        self.sink_ctrl.disable(sink);
+                    },
+                    Telecommand::DisableSink(sink, time) => {
+                        self.sink_ctrl.disable(sink);
+                        if time == 0 {
+                            return;
+                        }
+                        // dito
+                        Timer::after_secs(time as u64).await;
+                        self.sink_ctrl.enable(sink);
+                    },
                 }
             },
             Err(e) => error!("{}", e),
@@ -158,6 +175,7 @@ impl<'a, 'd> ControlLoop<'a, 'd> {
             self.state = SystemState::Online;
             return;
         }
+        info!("v: {}", self.aux_pwr.get_voltage().await);
         Timer::after_millis(50).await;
     }
 

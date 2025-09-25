@@ -2,7 +2,7 @@ use embassy_stm32::{gpio::{Level, Output, Pin, Speed}, Peri};
 use defmt::Format;
 
 #[repr(u8)]
-#[derive(Format)]
+#[derive(Format, Clone, Copy)]
 pub enum Sink {
     RocketLST,
     Mainboard,
@@ -47,12 +47,12 @@ impl<'d> SinkCtrl<'d> {
     pub fn is_enabled(&mut self, sink: Sink) -> bool {
         self.get(sink).is_set_high()
     }
-    pub fn enable_critical(&mut self) {
-        self.enable(Sink::RocketLST);
-        self.enable(Sink::Mainboard)
-    }
-    pub fn is_critical_enabled(&mut self) -> bool {
-        self.is_enabled(Sink::RocketLST) &&
-        self.is_enabled(Sink::Mainboard)
-    }
+    // pub fn enable_critical(&mut self) {
+    //     self.enable(Sink::RocketLST);
+    //     self.enable(Sink::Mainboard)
+    // }
+    // pub fn is_critical_enabled(&mut self) -> bool {
+    //     self.is_enabled(Sink::RocketLST) &&
+    //     self.is_enabled(Sink::Mainboard)
+    // }
 }

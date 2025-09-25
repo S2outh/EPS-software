@@ -10,8 +10,8 @@ pub(super) struct ParseError(&'static str);
 #[derive(Format)]
 pub(super) enum Telecommand {
     SetSource(FlipFlopState),
-    EnableSink(Sink),
-    DisableSink(Sink),
+    EnableSink(Sink, u8),
+    DisableSink(Sink, u8),
 }
 
 // these parse only for pure repr[u8] enums. which these are.
@@ -39,8 +39,8 @@ impl Telecommand {
         let payload = &data[3..3+payload_length];
         Ok(match data[1] {
             0x00 => Self::SetSource(FlipFlopState::from_u8(payload[0])?),
-            0x01 => Self::EnableSink(Sink::from_u8(payload[0])?),
-            0x02 => Self::DisableSink(Sink::from_u8(payload[0])?),
+            0x01 => Self::EnableSink(Sink::from_u8(payload[0])?, *payload.get(1).unwrap_or(&0u8)),
+            0x02 => Self::DisableSink(Sink::from_u8(payload[0])?, *payload.get(1).unwrap_or(&0u8)),
             _ => return Err(ParseError("command id out of bounds"))
         })
     }

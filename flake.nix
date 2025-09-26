@@ -31,7 +31,7 @@
           ];
 
 					# rust toolchain version
-          RUSTC_VERSION = "stable";
+          RUSTC_VERSION = "nightly";
 
 					# set default log level
 					DEFMT_LOG = "info";

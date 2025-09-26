@@ -9,15 +9,15 @@ pub(super) struct ParseError(&'static str);
 
 #[derive(Format)]
 pub(super) enum Telecommand {
-    SetSource(FlipFlopState),
-    EnableSink(Sink, u8),
-    DisableSink(Sink, u8),
+    SetSource(FlipFlopState, Option<u8>),
+    EnableSink(Sink, Option<u8>),
+    DisableSink(Sink, Option<u8>),
 }
 
 // these parse only for pure repr[u8] enums. which these are.
 impl FlipFlopState {
     fn from_u8(uint: u8) -> Result<FlipFlopState, ParseError> {
-        if uint >= 4 {
+        if uint >= core::mem::variant_count::<FlipFlopState>() as u8 {
             Err(ParseError("flipflop state out of bounds"))
         } else { unsafe { Ok(core::mem::transmute(uint)) }}
     }
@@ -25,7 +25,7 @@ impl FlipFlopState {
 
 impl Sink {
     fn from_u8(uint: u8) -> Result<Sink, ParseError> {
-        if uint >= 3 {
+        if uint >= core::mem::variant_count::<FlipFlopState>() as u8 {
             Err(ParseError("sink id out of bounds"))
         } else { unsafe { Ok(core::mem::transmute(uint)) }}
     }
@@ -38,9 +38,9 @@ impl Telecommand {
         let payload_length = data[2] as usize;
         let payload = &data[3..3+payload_length];
         Ok(match data[1] {
-            0x00 => Self::SetSource(FlipFlopState::from_u8(payload[0])?),
-            0x01 => Self::EnableSink(Sink::from_u8(payload[0])?, *payload.get(1).unwrap_or(&0u8)),
-            0x02 => Self::DisableSink(Sink::from_u8(payload[0])?, *payload.get(1).unwrap_or(&0u8)),
+            0x00 => Self::SetSource(FlipFlopState::from_u8(payload[0])?, payload.get(1).copied()),
+            0x01 => Self::EnableSink(Sink::from_u8(payload[0])?, payload.get(1).copied()),
+            0x02 => Self::DisableSink(Sink::from_u8(payload[0])?, payload.get(1).copied()),
             _ => return Err(ParseError("command id out of bounds"))
         })
     }

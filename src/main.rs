@@ -1,6 +1,7 @@
 #![no_std]
 #![no_main]
 
+#![feature(variant_count)]
 #[allow(dead_code)]
 
 mod pwr_src;
@@ -15,7 +16,7 @@ use embassy_time::Timer;
 use defmt::*;
 use embassy_executor::Spawner;
 use embassy_stm32::{
-    adc::{Adc, AdcChannel}, bind_interrupts, can::{self, CanConfigurator}, gpio::{Input, Level, Output, Speed}, i2c::{self, I2c}, peripherals::{self, FDCAN1, IWDG}, rcc::{self, mux::Fdcansel}, time::khz, wdg::IndependentWatchdog, Config
+    adc::{Adc, AdcChannel}, bind_interrupts, can::{self, CanConfigurator}, gpio::{Level, Output, Speed}, i2c::{self, I2c}, peripherals::{self, FDCAN1, IWDG}, rcc::{self, mux::Fdcansel}, time::khz, wdg::IndependentWatchdog, Config
 };
 
 
@@ -101,8 +102,13 @@ async fn main(_spawner: Spawner) {
     let temp_sensor_i2c = Mutex::new(I2c::new(p.I2C2, p.PA7, p.PA6, Irqs, p.DMA1_CH2, p.DMA1_CH3, i2c_config));
 
     // flip flop
-    let mut source_flip_flop = DFlipFlop::new(p.PB3, p.PB4, p.PB5, p.PB6);
-    source_flip_flop.set(pwr_src::d_flip_flop::FlipFlopState::Off).await;
+    let mut source_flip_flop = DFlipFlop::new(
+        p.PB3, p.PC14, // bat 1
+        p.PB4, p.PC6, // bat 2
+        p.PB5, p.PC15, // aux pwr
+        p.PB6 // clk
+    );
+    source_flip_flop.update().await;
 
     // sink ctrl
     let sink_ctrl = SinkCtrl::new(p.PA9, p.PA5, p.PA0, p.PA15);
@@ -110,12 +116,10 @@ async fn main(_spawner: Spawner) {
     // first battery
     let bat_1_tmp = Tmp100::new(&temp_sensor_i2c, Resolution::BITS12, Addr0State::Floating).await
         .inspect_err(|e| error!("could not establish connection to bat 1 temp sensor: {}", e));
-    let bat_1_stat = Input::new(p.PC14, embassy_stm32::gpio::Pull::None);
-    let bat_1 = Battery::new(bat_1_tmp.ok(), bat_1_watch.receiver().unwrap().as_dyn(), bat_1_stat).await;
+    let bat_1 = Battery::new(bat_1_tmp.ok(), bat_1_watch.receiver().unwrap().as_dyn()).await;
 
     // aux power
-    let aux_pwr_stat = Input::new(p.PC15, embassy_stm32::gpio::Pull::None);
-    let aux_pwr = AuxPwr::new(aux_pwr_watch.receiver().unwrap().as_dyn(), aux_pwr_stat).await;
+    let aux_pwr = AuxPwr::new(aux_pwr_watch.receiver().unwrap().as_dyn()).await;
 
     // debug leds not used at the moment (might disrupt can)
     let _led1 = Output::new(p.PB7, Level::Low, Speed::Low);

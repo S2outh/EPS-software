@@ -1,6 +1,7 @@
 mod telecommands;
 
 use defmt::{error, info};
+use embassy_futures::select::{select, Either};
 use embassy_stm32::can::{CanConfigurator, RxBuf, TxBuf};
 use embassy_sync::watch::DynReceiver;
 use embassy_time::Timer;
@@ -8,7 +9,7 @@ use rodos_can_interface::{ActivePeriph, RodosCanInterface};
 use static_cell::StaticCell;
 
 use crate::control_loop::telecommands::Telecommand;
-use crate::pwr_src::d_flip_flop::{DFlipFlop, FlipFlopState};
+use crate::pwr_src::d_flip_flop::{DFlipFlop, FlipFlopInput, FlipFlopState};
 use crate::pwr_src::sink_ctrl::{Sink, SinkCtrl};
 
 use super::pwr_src::battery::Battery;
@@ -49,7 +50,7 @@ pub struct ControlLoop<'a, 'd> {
     source_flip_flop: DFlipFlop<'d>,
     sink_ctrl: SinkCtrl<'d>,
     bat_1: Battery<'a, 'd>,
-    aux_pwr: AuxPwr<'a, 'd>,
+    aux_pwr: AuxPwr<'a>,
     internal_temperature: DynReceiver<'a, i16>,
     can_tranciever: RodosCanInterface<ActivePeriph<'a, NUMBER_OF_SENDING_DEVICES, RODOS_MAX_RAW_MSG_LEN, TX_BUF_SIZE, RX_BUF_SIZE>>
 }
@@ -58,7 +59,7 @@ impl<'a, 'd> ControlLoop<'a, 'd> {
         source_flip_flop: DFlipFlop<'d>,
         sink_ctrl: SinkCtrl<'d>,
         bat_1: Battery<'a, 'd>,
-        aux_pwr: AuxPwr<'a, 'd>,
+        aux_pwr: AuxPwr<'a>,
         internal_temperature: DynReceiver<'a, i16>,
         can_configurator: CanConfigurator<'a>
     ) -> Self {
@@ -88,25 +89,33 @@ impl<'a, 'd> ControlLoop<'a, 'd> {
             Ok(telecommand) => {
                 info!("tc: {}", telecommand);
                 match telecommand {
-                    Telecommand::SetSource(state) => self.source_flip_flop.set(state).await,
-                    Telecommand::EnableSink(sink, time) => {
-                        self.sink_ctrl.enable(sink);
-                        if time == 0 {
-                            return;
+                    Telecommand::SetSource(state, time) => {
+                        let old_state = self.source_flip_flop.get_state();
+                        self.source_flip_flop.set(state).await;
+                        if let Some(time) = time {
+                            Timer::after_secs(time as u64).await;
+                            self.source_flip_flop.set(old_state).await;
                         }
-                        // this is blocking and prevents tm/tc during timeout.
-                        // might be good to fix in the future
-                        Timer::after_secs(time as u64).await;
-                        self.sink_ctrl.disable(sink);
+                    },
+                    Telecommand::EnableSink(sink, time) => {
+                        if self.sink_ctrl.is_enabled(sink) { return; }
+                        self.sink_ctrl.enable(sink);
+                        if let Some(time) = time {
+                            // this is blocking and prevents tm/tc during timeout.
+                            // might be good to fix in the future
+                            Timer::after_secs(time as u64).await;
+                            self.sink_ctrl.disable(sink);
+                        }
                     },
                     Telecommand::DisableSink(sink, time) => {
+                        if !self.sink_ctrl.is_enabled(sink) { return; }
                         self.sink_ctrl.disable(sink);
-                        if time == 0 {
-                            return;
+                        if let Some(time) = time {
+                            // this is blocking and prevents tm/tc during timeout.
+                            // might be good to fix in the future
+                            Timer::after_secs(time as u64).await;
+                            self.sink_ctrl.enable(sink);
                         }
-                        // dito
-                        Timer::after_secs(time as u64).await;
-                        self.sink_ctrl.enable(sink);
                     },
                 }
             },
@@ -131,8 +140,8 @@ impl<'a, 'd> ControlLoop<'a, 'd> {
             .unwrap_or_else(|e| error!("could not send aux pwr voltage: {}", e));
 
         let bitmap: u8 = 
-            self.bat_1.is_enabled() as u8 |
-            (self.aux_pwr.is_enabled() as u8) << 1 |
+            self.source_flip_flop.is_enabled(FlipFlopInput::Bat1) as u8 |
+            (self.source_flip_flop.is_enabled(FlipFlopInput::AuxPwr) as u8) << 1 |
             (self.sink_ctrl.is_enabled(Sink::Mainboard) as u8) << 2 |
             (self.sink_ctrl.is_enabled(Sink::RocketLST) as u8) << 3 |
             (self.sink_ctrl.is_enabled(Sink::RocketHD) as u8) << 4;
@@ -141,43 +150,55 @@ impl<'a, 'd> ControlLoop<'a, 'd> {
             &[bitmap]).await
             .unwrap_or_else(|e| error!("could not send enable bm: {}", e));
     }
+    
+    async fn monitor_ispida_pwr(source_flip_flop: &mut DFlipFlop<'_>, ispida_pwr: &mut AuxPwr<'_>) {
+        loop {
+            // TEMP SOLUTION
+            source_flip_flop.update().await;
+            // 
+            if ispida_pwr.get_voltage().await >= ACTIVATION_VOLTAGE_THRESHHOLD_10X_MV {
+                return;
+            }
+            Timer::after_millis(50).await;
+        }
+    }
 
+    async fn run_standby(&mut self) {
+        self.source_flip_flop.update().await;
+        if self.aux_pwr.get_voltage().await < ACTIVATION_VOLTAGE_THRESHHOLD_10X_MV {
+            self.source_flip_flop.set(FlipFlopState::Bat1).await;
+            self.state = SystemState::Online;
+            return;
+        }
+        Timer::after_millis(50).await;
+    }
 
     async fn run_online(&mut self) {
 
         const RODOS_CMD_TOPIC_ID: u16 = TopicId::Cmd as u16;
         const RODOS_TELEM_REQ_TOPIC_ID: u16 = TopicId::TelemReq as u16;
 
-        // if critical systems are not online, wait for 1 second then enable them
-        // if !self.sink_ctrl.is_critical_enabled() || (!self.bat_1.is_enabled() && !self.aux_pwr.is_enabled()) {
-        //     Timer::after_secs(1).await;
-        //     self.sink_ctrl.enable_critical();
-        //     self.source_flip_flop.set(FlipFlopState::Bat1).await;
-        // }
-
+        let event = select(self.can_tranciever.receive(), Self::monitor_ispida_pwr(&mut self.source_flip_flop, &mut self.aux_pwr)).await;
         // control over can connection
-        match self.can_tranciever.receive().await {
-            Ok(frame) => {
-                let mut data = [0; RODOS_MAX_RAW_MSG_LEN];
-                data[..frame.data().len()].copy_from_slice(frame.data());
-                match frame.topic() {
-                    RODOS_CMD_TOPIC_ID => self.handle_cmd(&data).await,
-                    RODOS_TELEM_REQ_TOPIC_ID => self.send_tm().await,
-                    _ => error!("impossible topic: {}", frame.topic()),
+        match event {
+            Either::First(can_result) => match can_result {
+                Ok(frame) => {
+                    let mut data = [0; RODOS_MAX_RAW_MSG_LEN];
+                    data[..frame.data().len()].copy_from_slice(frame.data());
+                    match frame.topic() {
+                        RODOS_CMD_TOPIC_ID => self.handle_cmd(&data).await,
+                        RODOS_TELEM_REQ_TOPIC_ID => self.send_tm().await,
+                        _ => error!("impossible topic: {}", frame.topic()),
+                    }
                 }
+                Err(e) => error!("error in frame! {}", e),
+            },
+            Either::Second(()) => {
+                info!("ispida power on, going standby");
+                self.state = SystemState::Standby;
+                self.source_flip_flop.set(FlipFlopState::Off).await;
             }
-            Err(e) => error!("error in frame! {}", e),
         };
-    }
-
-    async fn run_standby(&mut self) {
-        if self.aux_pwr.get_voltage().await < ACTIVATION_VOLTAGE_THRESHHOLD_10X_MV {
-            self.source_flip_flop.set(FlipFlopState::Bat1).await;
-            self.state = SystemState::Online;
-            return;
-        }
-        info!("v: {}", self.aux_pwr.get_voltage().await);
-        Timer::after_millis(50).await;
     }
 
     pub async fn run(&mut self) {

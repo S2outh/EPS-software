@@ -24,7 +24,7 @@ use adc::EPSAdc;
 
 use control_loop::ControlLoop;
 
-use crate::pwr_src::sink_ctrl::SinkCtrl;
+use crate::pwr_src::sink_ctrl::{Sink, SinkCtrl};
 
 use {defmt_rtt as _, panic_probe as _};
 
@@ -102,16 +102,19 @@ async fn main(_spawner: Spawner) {
     let temp_sensor_i2c = Mutex::new(I2c::new(p.I2C2, p.PA7, p.PA6, Irqs, p.DMA1_CH2, p.DMA1_CH3, i2c_config));
 
     // flip flop
-    let mut source_flip_flop = DFlipFlop::new(
+    let source_flip_flop = DFlipFlop::new(
         p.PB3, p.PC14, // bat 1
         p.PB4, p.PC6, // bat 2
         p.PB5, p.PC15, // aux pwr
         p.PB6 // clk
     );
-    source_flip_flop.update().await;
 
     // sink ctrl
-    let sink_ctrl = SinkCtrl::new(p.PA9, p.PA5, p.PA0, p.PA15);
+    let mut sink_ctrl = SinkCtrl::new(p.PA9, p.PA5, p.PA0, p.PA15);
+
+    sink_ctrl.disable(Sink::RocketHD);
+    sink_ctrl.disable(Sink::RocketLST);
+    sink_ctrl.disable(Sink::Mainboard);
 
     // first battery
     let bat_1_tmp = Tmp100::new(&temp_sensor_i2c, Resolution::BITS12, Addr0State::Floating).await

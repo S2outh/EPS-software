@@ -9,7 +9,7 @@ use rodos_can_interface::{ActivePeriph, RodosCanInterface};
 use static_cell::StaticCell;
 
 use crate::control_loop::telecommands::Telecommand;
-use crate::pwr_src::d_flip_flop::{DFlipFlop, FlipFlopInput, FlipFlopState};
+use crate::pwr_src::d_flip_flop::{DFlipFlop, FlipFlopInput};
 use crate::pwr_src::sink_ctrl::{Sink, SinkCtrl};
 
 use super::pwr_src::battery::Battery;
@@ -151,26 +151,25 @@ impl<'a, 'd> ControlLoop<'a, 'd> {
             .unwrap_or_else(|e| error!("could not send enable bm: {}", e));
     }
     
-    async fn monitor_ispida_pwr(source_flip_flop: &mut DFlipFlop<'_>, ispida_pwr: &mut AuxPwr<'_>) {
+    async fn monitor_ispida_pwr(ispida_pwr: &mut AuxPwr<'_>) {
         loop {
-            // TEMP SOLUTION
-            source_flip_flop.update().await;
-            // 
             if ispida_pwr.get_voltage().await >= ACTIVATION_VOLTAGE_THRESHHOLD_10X_MV {
                 return;
             }
-            Timer::after_millis(50).await;
+            Timer::after_millis(100).await;
         }
     }
 
     async fn run_standby(&mut self) {
-        self.source_flip_flop.update().await;
         if self.aux_pwr.get_voltage().await < ACTIVATION_VOLTAGE_THRESHHOLD_10X_MV {
-            self.source_flip_flop.set(FlipFlopState::Bat1).await;
             self.state = SystemState::Online;
+
+            self.sink_ctrl.enable(Sink::RocketHD);
+            self.sink_ctrl.enable(Sink::RocketLST);
+            self.sink_ctrl.enable(Sink::Mainboard);
             return;
         }
-        Timer::after_millis(50).await;
+        Timer::after_millis(500).await;
     }
 
     async fn run_online(&mut self) {
@@ -178,7 +177,7 @@ impl<'a, 'd> ControlLoop<'a, 'd> {
         const RODOS_CMD_TOPIC_ID: u16 = TopicId::Cmd as u16;
         const RODOS_TELEM_REQ_TOPIC_ID: u16 = TopicId::TelemReq as u16;
 
-        let event = select(self.can_tranciever.receive(), Self::monitor_ispida_pwr(&mut self.source_flip_flop, &mut self.aux_pwr)).await;
+        let event = select(self.can_tranciever.receive(), Self::monitor_ispida_pwr(&mut self.aux_pwr)).await;
         // control over can connection
         match event {
             Either::First(can_result) => match can_result {
@@ -196,7 +195,9 @@ impl<'a, 'd> ControlLoop<'a, 'd> {
             Either::Second(()) => {
                 info!("ispida power on, going standby");
                 self.state = SystemState::Standby;
-                self.source_flip_flop.set(FlipFlopState::Off).await;
+                self.sink_ctrl.disable(Sink::RocketHD);
+                self.sink_ctrl.disable(Sink::RocketLST);
+                self.sink_ctrl.disable(Sink::Mainboard);
             }
         };
     }

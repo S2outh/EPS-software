@@ -5,7 +5,6 @@ use defmt::Format;
 #[repr(u8)]
 #[derive(Format, Clone, Copy)]
 pub enum FlipFlopState {
-    Off,
     On,
     Bat1,
     Bat2,
@@ -42,7 +41,7 @@ impl<'d> DFlipFlop<'d> {
         state_aux_pwr: Peri<'d, impl Pin>,
         clk: Peri<'d, impl Pin>,
         ) -> Self {
-        let state = FlipFlopState::Off;
+        let state = FlipFlopState::On;
         let d_bat_1 = Output::new(d_bat_1, Level::Low, Speed::High);
         let state_bat_1 = Input::new(state_bat_1, Pull::None);
         let d_bat_2 = Output::new(d_bat_2, Level::Low, Speed::High);
@@ -76,7 +75,6 @@ impl<'d> DFlipFlop<'d> {
     }
     pub fn map_state(&self) -> (bool, bool, bool) {
         match self.state {
-            FlipFlopState::Off => (false, false, false),
             FlipFlopState::On => (true, true, true),
             FlipFlopState::Bat1 => (true, false, false),
             FlipFlopState::Bat2 => (false, true, false),

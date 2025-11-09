@@ -1,6 +1,9 @@
-use embassy_stm32::{gpio::{Input, Level, Output, Pin, Pull, Speed}, Peri};
-use embassy_time::Timer;
 use defmt::Format;
+use embassy_stm32::{
+    Peri,
+    gpio::{Input, Level, Output, Pin, Pull, Speed},
+};
+use embassy_time::Timer;
 
 #[repr(u8)]
 #[derive(Format, Clone, Copy)]
@@ -28,7 +31,7 @@ pub struct DFlipFlop<'d> {
 }
 struct RawFlipFlop<'d> {
     d_pin: Output<'d>,
-    state_pin: Input<'d>
+    state_pin: Input<'d>,
 }
 
 impl<'d> DFlipFlop<'d> {
@@ -40,7 +43,7 @@ impl<'d> DFlipFlop<'d> {
         d_aux_pwr: Peri<'d, impl Pin>,
         state_aux_pwr: Peri<'d, impl Pin>,
         clk: Peri<'d, impl Pin>,
-        ) -> Self {
+    ) -> Self {
         let state = FlipFlopState::On;
         let d_bat_1 = Output::new(d_bat_1, Level::Low, Speed::High);
         let state_bat_1 = Input::new(state_bat_1, Pull::None);
@@ -52,10 +55,19 @@ impl<'d> DFlipFlop<'d> {
         let clk = Output::new(clk, Level::Low, Speed::High);
         Self {
             state,
-            bat_1: RawFlipFlop { d_pin: d_bat_1, state_pin: state_bat_1 },
-            bat_2: RawFlipFlop { d_pin: d_bat_2, state_pin: state_bat_2 },
-            aux_pwr: RawFlipFlop { d_pin: d_aux_pwr, state_pin: state_aux_pwr },
-            clk
+            bat_1: RawFlipFlop {
+                d_pin: d_bat_1,
+                state_pin: state_bat_1,
+            },
+            bat_2: RawFlipFlop {
+                d_pin: d_bat_2,
+                state_pin: state_bat_2,
+            },
+            aux_pwr: RawFlipFlop {
+                d_pin: d_aux_pwr,
+                state_pin: state_aux_pwr,
+            },
+            clk,
         }
     }
     pub fn is_enabled(&self, input: FlipFlopInput) -> bool {
@@ -83,10 +95,10 @@ impl<'d> DFlipFlop<'d> {
     }
     pub async fn update(&mut self) {
         let (bat_1_on, bat_2_on, aux_pwr_on) = self.map_state();
-        if bat_1_on != self.is_enabled(FlipFlopInput::Bat1) ||
-            bat_2_on != self.is_enabled(FlipFlopInput::Bat2) ||
-            aux_pwr_on != self.is_enabled(FlipFlopInput::AuxPwr) {
-
+        if bat_1_on != self.is_enabled(FlipFlopInput::Bat1)
+            || bat_2_on != self.is_enabled(FlipFlopInput::Bat2)
+            || aux_pwr_on != self.is_enabled(FlipFlopInput::AuxPwr)
+        {
             self.bat_1.d_pin.set_level((!bat_1_on).into());
             self.bat_2.d_pin.set_level((!bat_2_on).into());
             self.aux_pwr.d_pin.set_level((!aux_pwr_on).into());

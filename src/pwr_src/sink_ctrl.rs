@@ -1,5 +1,8 @@
-use embassy_stm32::{gpio::{Level, Output, Pin, Speed}, Peri};
 use defmt::Format;
+use embassy_stm32::{
+    Peri,
+    gpio::{Level, Output, Pin, Speed},
+};
 
 #[repr(u8)]
 #[derive(Format, Clone, Copy)]
@@ -28,7 +31,12 @@ impl<'d> SinkCtrl<'d> {
         let mb_enable = Output::new(mb_enable, Level::High, Speed::High);
         let gps_enable = Output::new(gps_enable, Level::High, Speed::High);
         let rhd_enable = Output::new(rhd_enable, Level::High, Speed::High);
-        Self { lst_enable, mb_enable, gps_enable, rhd_enable }
+        Self {
+            lst_enable,
+            mb_enable,
+            gps_enable,
+            rhd_enable,
+        }
     }
     fn get(&mut self, sink: Sink) -> &mut Output<'d> {
         match sink {
@@ -47,12 +55,4 @@ impl<'d> SinkCtrl<'d> {
     pub fn is_enabled(&mut self, sink: Sink) -> bool {
         self.get(sink).is_set_high()
     }
-    // pub fn enable_critical(&mut self) {
-    //     self.enable(Sink::RocketLST);
-    //     self.enable(Sink::Mainboard)
-    // }
-    // pub fn is_critical_enabled(&mut self) -> bool {
-    //     self.is_enabled(Sink::RocketLST) &&
-    //     self.is_enabled(Sink::Mainboard)
-    // }
 }

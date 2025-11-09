@@ -13,7 +13,10 @@ impl FactoryCalibratedValues {
             let ts_cal_1_x10 = 10 * read_volatile(TS_CAL_1_REG as *const u16) as i32;
             let ts_cal_2_x10 = 10 * read_volatile(TS_CAL_2_REG as *const u16) as i32;
             let ts_cal_rel_x10 = ts_cal_2_x10 - ts_cal_1_x10;
-            Self { ts_cal_1_x10, ts_cal_rel_x10 }
+            Self {
+                ts_cal_1_x10,
+                ts_cal_rel_x10,
+            }
         }
     }
 }

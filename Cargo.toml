@@ -20,12 +20,12 @@ heapless = { version = "0.9", default-features = false }
 portable-atomic = { version = "1.11", features = ["unsafe-assume-single-core"] }
 
 embedded-hal = "1.0.0"
+embedded-hal-async = "1.0.0"
 embedded-io-async = { version = "0.6.1" }
 embedded-can = "0.4.1"
-static_cell = "2.1.1"
+static_cell = { version = "2.1.1", features = ["nightly"] }
 
-rodos_can_interface = { git = "ssh://git@gitlab2.informatik.uni-wuerzburg.de/wuespace/south/rodos-can-interface.git", features = ["stm32g0b1ke"] }
-# rodos_can_interface = { path = "../rodos_can_interface" }
+rodos_can_interface = { version = "1.0.0", features = ["stm32g0b1ke"], default-features = false }
 
 [profile.release]
 debug = 2

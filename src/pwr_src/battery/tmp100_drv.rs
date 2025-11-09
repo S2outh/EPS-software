@@ -1,12 +1,14 @@
-use embassy_stm32::{i2c::{Error, I2c, Master}, mode::Async};
+use embedded_hal_async::{
+    i2c::{I2c, ErrorType},
+};
 use embassy_sync::{blocking_mutex::raw::ThreadModeRawMutex, mutex::Mutex};
 
 const TEMP_RANGE_TENTH_DEG: i32 = 128_0;
 
 const TEMP_POINTER_REG: u8 = 0b00;
 const CONFIG_POINTER_REG: u8 = 0b01;
-const T_LOW_POINTER_REG: u8 = 0b10;
-const T_HIGH_POINTER_REG: u8 = 0b11;
+//const T_LOW_POINTER_REG: u8 = 0b10;
+//const T_HIGH_POINTER_REG: u8 = 0b11;
 
 pub enum Resolution {
     BITS9,
@@ -44,7 +46,7 @@ impl Resolution {
 pub enum Addr0State {
     Floating,
     High,
-    Low
+    Low,
 }
 impl Addr0State {
     pub fn get_addr(&self) -> u8 {
@@ -56,35 +58,51 @@ impl Addr0State {
     }
 }
 
-pub struct Tmp100<'a, 'd> {
-    interface: &'a Mutex<ThreadModeRawMutex, I2c<'d, Async, Master>>,
+pub struct Tmp100<'a, I2C: I2c + ErrorType> {
+    interface: &'a Mutex<ThreadModeRawMutex, I2C>,
     resolution: Resolution,
-    addr_state: Addr0State
+    addr_state: Addr0State,
 }
 
-impl<'a, 'd> Tmp100<'a, 'd> {
+impl<'a, I2C: I2c + ErrorType> Tmp100<'a, I2C> {
     pub async fn new(
-        interface: &'a Mutex<ThreadModeRawMutex, I2c<'d, Async, Master>>,
+        interface: &'a Mutex<ThreadModeRawMutex, I2C>,
         resolution: Resolution,
-        addr_state: Addr0State
-    ) -> Result<Self, Error> {
+        addr_state: Addr0State,
+    ) -> Result<Self, I2C::Error> {
         let mut config_reg = 0;
         resolution.set_reg_bits(&mut config_reg);
-        interface.lock().await.write(addr_state.get_addr(), &[CONFIG_POINTER_REG, config_reg]).await?;
-        interface.lock().await.write(addr_state.get_addr(), &[TEMP_POINTER_REG]).await?;
-        Ok(Self { interface, resolution, addr_state })
+        interface
+            .lock()
+            .await
+            .write(addr_state.get_addr(), &[CONFIG_POINTER_REG, config_reg])
+            .await?;
+        interface
+            .lock()
+            .await
+            .write(addr_state.get_addr(), &[TEMP_POINTER_REG])
+            .await?;
+        Ok(Self {
+            interface,
+            resolution,
+            addr_state,
+        })
     }
     pub fn raw_temp_range(&self) -> i32 {
         self.resolution.get_temp_range()
     }
-    pub async fn read_temp_raw(&mut self) -> Result<i32, Error> {
+    pub async fn read_temp_raw(&mut self) -> Result<i32, I2C::Error> {
         let mut buffer = [0u8; 2];
-        self.interface.lock().await.read(self.addr_state.get_addr(), &mut buffer).await?;
+        self.interface
+            .lock()
+            .await
+            .read(self.addr_state.get_addr(), &mut buffer)
+            .await?;
         let bitshift = self.resolution.get_bit_shift();
         let tmp_raw = (buffer[0] as i32) << bitshift | (buffer[1] as i32) >> (8 - bitshift);
         Ok(tmp_raw)
     }
-    pub async fn read_temp(&mut self) -> Result<i16, Error> {
+    pub async fn read_temp(&mut self) -> Result<i16, I2C::Error> {
         Ok(((self.read_temp_raw().await? * TEMP_RANGE_TENTH_DEG) / self.raw_temp_range()) as i16)
     }
 }

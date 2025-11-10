@@ -1,7 +1,5 @@
-use embedded_hal_async::{
-    i2c::{I2c, ErrorType},
-};
 use embassy_sync::{blocking_mutex::raw::ThreadModeRawMutex, mutex::Mutex};
+use embedded_hal_async::i2c::{ErrorType, I2c};
 
 const TEMP_RANGE_TENTH_DEG: i32 = 128_0;
 

@@ -2,10 +2,15 @@
 #![no_main]
 #![feature(variant_count)]
 #![feature(type_alias_impl_trait)]
-#[allow(dead_code)]
+#![feature(iter_collect_into)]
+#![feature(iterator_try_collect)]
+#![feature(generic_const_exprs)]
+
 mod adc;
 mod control_loop;
+#[allow(dead_code)]
 mod pwr_src;
+mod util;
 
 use adc::AdcCtrl;
 use control_loop::ControlLoop;
@@ -20,11 +25,23 @@ use defmt::*;
 
 use embassy_executor::Spawner;
 use embassy_stm32::{
-    adc::{Adc, AdcChannel}, bind_interrupts, can::{self, CanConfigurator}, gpio::{Level, Output, Speed}, i2c::{self, I2c, Master}, mode::Async, peripherals::{self, DMA1_CH1, FDCAN1, IWDG}, rcc::{self, mux::Fdcansel}, time::khz, wdg::IndependentWatchdog, Config
+    Config,
+    adc::{Adc, AdcChannel},
+    bind_interrupts,
+    can::{self, CanConfigurator},
+    gpio::{Level, Output, Speed},
+    i2c::{self, I2c, Master},
+    mode::Async,
+    peripherals::{self, DMA1_CH1, FDCAN1, IWDG},
+    rcc::{self, mux::Fdcansel},
+    time::khz,
+    wdg::IndependentWatchdog,
 };
 use embassy_sync::{blocking_mutex::raw::ThreadModeRawMutex, mutex::Mutex, watch::Watch};
 use embassy_time::Timer;
 use static_cell::StaticCell;
+
+use crate::adc::AdcCtrlChannel;
 
 use {defmt_rtt as _, panic_probe as _};
 
@@ -65,15 +82,9 @@ fn get_rcc_config() -> rcc::Config {
 }
 
 #[embassy_executor::task]
-pub async fn adc_thread(mut adc: AdcCtrl<'static, 'static, DMA1_CH1>) {
+pub async fn adc_thread(mut adc: AdcCtrl<'static, 'static, DMA1_CH1, 4>) {
     loop {
         adc.run().await;
-    }
-}
-#[embassy_executor::task]
-pub async fn control_loop_thread(mut control_loop: ControlLoop<'static, 'static>) {
-    loop {
-        control_loop.run().await;
     }
 }
 // static concurrency sync management types
@@ -117,23 +128,33 @@ async fn main(spawner: Spawner) {
 
     // ADC setup
     let adc_periph = Adc::new(p.ADC1);
+
     let internal_temperature_watch = ITW.init(Watch::<ThreadModeRawMutex, i16, 1>::new());
-    let bat_1_channel = p.PA4.degrade_adc();
     let bat_1_watch = B1W.init(Watch::<ThreadModeRawMutex, i16, 1>::new());
-    let bat_2_channel = p.PA3.degrade_adc();
     let bat_2_watch = B2W.init(Watch::<ThreadModeRawMutex, i16, 1>::new());
-    let aux_pwr_channel = p.PA2.degrade_adc();
     let aux_pwr_watch = APW.init(Watch::<ThreadModeRawMutex, i16, 1>::new());
+
+    let bat_1_channel = AdcCtrlChannel::new(
+        p.PA4.degrade_adc(),
+        bat_1_watch.sender().as_dyn(),
+        adc::conversion::calculate_voltage_10mv,
+    );
+    let bat_2_channel = AdcCtrlChannel::new(
+        p.PA3.degrade_adc(),
+        bat_2_watch.sender().as_dyn(),
+        adc::conversion::calculate_voltage_10mv,
+    );
+    let aux_pwr_channel = AdcCtrlChannel::new(
+        p.PA2.degrade_adc(),
+        aux_pwr_watch.sender().as_dyn(),
+        adc::conversion::calculate_voltage_10mv,
+    );
+
     let adc = AdcCtrl::new(
         adc_periph,
         p.DMA1_CH1,
-        bat_1_channel,
-        bat_2_channel,
-        aux_pwr_channel,
         internal_temperature_watch.sender().as_dyn(),
-        bat_1_watch.sender().as_dyn(),
-        bat_2_watch.sender().as_dyn(),
-        aux_pwr_watch.sender().as_dyn(),
+        [bat_1_channel, bat_2_channel, aux_pwr_channel],
     );
 
     // first battery
@@ -155,7 +176,7 @@ async fn main(spawner: Spawner) {
 
     // Main control loop setup
     let can_configurator = CanConfigurator::new(p.FDCAN1, p.PA11, p.PA12, Irqs);
-    let control_loop = ControlLoop::spawn(
+    let mut control_loop = ControlLoop::spawn(
         source_flip_flop,
         sink_ctrl,
         bat_1,
@@ -166,7 +187,8 @@ async fn main(spawner: Spawner) {
 
     spawner.must_spawn(petter(watchdog));
     spawner.must_spawn(adc_thread(adc));
-    spawner.must_spawn(control_loop_thread(control_loop));
 
-    core::future::pending::<()>().await;
+    loop {
+        control_loop.run().await
+    }
 }

@@ -4,6 +4,7 @@ use embassy_stm32::{
     mode::Async,
 };
 use embassy_sync::{channel::DynamicSender, watch::DynReceiver};
+use embassy_time::Timer;
 use heapless::Vec;
 use tmp100_drv::Tmp100;
 
@@ -12,6 +13,16 @@ use tmtc_definitions::{DynTelemetryDefinition, TMValue};
 use crate::EpsTelem;
 
 const ERROR_TMP: i16 = i16::MIN;
+
+// Battery task
+#[embassy_executor::task(pool_size = 2)]
+pub async fn battery_thread(mut battery: Battery<'static, 'static>) {
+    const BTRY_LOOP_LEN_MS: u64 = 500;
+    loop {
+        battery.run().await;
+        Timer::after_millis(BTRY_LOOP_LEN_MS).await;
+    }
+}
 
 pub struct Battery<'a, 'd> {
     temp_probe: Option<Tmp100<'a, I2c<'d, Async, Master>>>,

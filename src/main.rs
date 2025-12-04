@@ -32,7 +32,7 @@ use embassy_stm32::{
     gpio::{Level, Output, Speed},
     i2c::{self, I2c, Master},
     mode::Async,
-    peripherals::{self, DMA1_CH1, FDCAN1, IWDG},
+    peripherals::{self, FDCAN1, IWDG},
     rcc::{self, mux::Fdcansel},
     time::khz,
     wdg::IndependentWatchdog,
@@ -40,9 +40,9 @@ use embassy_stm32::{
 use embassy_sync::{blocking_mutex::raw::ThreadModeRawMutex, channel::{Channel, DynamicSender, Receiver, Sender}, mutex::Mutex, watch::{DynReceiver, Watch}};
 use embassy_time::Timer;
 use static_cell::StaticCell;
-use tmtc_definitions::{TMValue, telemetry};
+use tmtc_definitions::{TMValue, DynTelemetryDefinition, telemetry};
 
-use crate::{adc::AdcCtrlChannel, control_loop::telecommands::Telecommand};
+use crate::{adc::AdcCtrlChannel, control_loop::telecommands::Telecommand, pwr_src::{aux_pwr, battery}};
 
 use rodos_can_interface::{RodosCanInterface, receiver::RodosCanReceiver, sender::RodosCanSender};
 
@@ -111,52 +111,16 @@ async fn petter(mut watchdog: IndependentWatchdog<'static, IWDG>) {
     }
 }
 
-// Adc reading task
-#[embassy_executor::task]
-pub async fn adc_thread(mut adc: AdcCtrl<'static, 'static, DMA1_CH1, 4>) {
-    const ADC_LOOP_LEN_MS: u64 = 50;
-    loop {
-        adc.run().await;
-        Timer::after_millis(ADC_LOOP_LEN_MS).await;
-    }
-}
-
 // Internal temperature tm task
 #[embassy_executor::task]
 pub async fn internal_temp_thread(tm_sender: DynamicSender<'static, EpsTelem>, mut temp_receiver: DynReceiver<'static, i16>) {
     const INTERNAL_TEMP_LOOP_LEN_MS: u64 = 2000;
     loop {
         let tm_data = Vec::from_array(temp_receiver.get().await.to_bytes());
-        tm_sender.send((telemetry::eps::InternalTemperature::ID, tm_data)).await;
+        tm_sender.send((telemetry::eps::InternalTemperature.id(), tm_data)).await;
 
         Timer::after_millis(INTERNAL_TEMP_LOOP_LEN_MS).await;
     }
-}
-
-// Battery task
-#[embassy_executor::task(pool_size = 2)]
-pub async fn battery_thread(mut battery: Battery<'static, 'static>) {
-    const BTRY_LOOP_LEN_MS: u64 = 500;
-    loop {
-        battery.run().await;
-        Timer::after_millis(BTRY_LOOP_LEN_MS).await;
-    }
-}
-
-// Aux pwr task
-#[embassy_executor::task]
-pub async fn aux_pwr_thread(mut aux_pwr: AuxPwr<'static>) {
-    const AUX_LOOP_LEN_MS: u64 = 500;
-    loop {
-        aux_pwr.run().await;
-        Timer::after_millis(AUX_LOOP_LEN_MS).await;
-    }
-}
-
-// control loop task
-#[embassy_executor::task]
-pub async fn ctrl_thread(mut control_loop: ControlLoop<'static>) {
-    loop { control_loop.run().await; }
 }
 
 type EpsTelem = (u32, Vec<u8, 2>);
@@ -297,7 +261,7 @@ async fn main(spawner: Spawner) {
 
     rodos_can_configurator
         .set_bitrate(1_000_000)
-        .add_receive_topic(tmtc_definitions::telecommands::Telecommand::ID as u16, None)
+        .add_receive_topic(tmtc_definitions::telecommands::Telecommand.id() as u16, None)
         .unwrap();
 
     let (can_receiver, can_sender, _interface) = rodos_can_configurator.activate(
@@ -314,12 +278,15 @@ async fn main(spawner: Spawner) {
     );
 
     spawner.must_spawn(petter(watchdog));
-    spawner.must_spawn(adc_thread(adc));
+
+    spawner.must_spawn(adc::adc_thread(adc));
+    spawner.must_spawn(control_loop::ctrl_thread(control_loop));
+
+    spawner.must_spawn(battery::battery_thread(bat_1));
+    spawner.must_spawn(battery::battery_thread(bat_2));
+    spawner.must_spawn(aux_pwr::aux_pwr_thread(aux_pwr));
+
     spawner.must_spawn(internal_temp_thread(tm_channel.dyn_sender(), internal_temperature_watch.dyn_receiver().unwrap()));
-    spawner.must_spawn(ctrl_thread(control_loop));
-    spawner.must_spawn(battery_thread(bat_1));
-    spawner.must_spawn(battery_thread(bat_2));
-    spawner.must_spawn(aux_pwr_thread(aux_pwr));
     spawner.must_spawn(tm_thread(can_sender, tm_channel.receiver()));
     spawner.must_spawn(tc_thread(can_receiver, cmd_channel.sender()));
     

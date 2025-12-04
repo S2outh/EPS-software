@@ -5,7 +5,7 @@ use embassy_futures::select::{Either, select};
 use embassy_sync::channel::{DynamicReceiver, DynamicSender};
 use embassy_time::Timer;
 use heapless::Vec;
-use tmtc_definitions::telemetry;
+use tmtc_definitions::{DynTelemetryDefinition, telemetry};
 
 use crate::EpsTelem;
 use crate::pwr_src::d_flip_flop::{DFlipFlop, FlipFlopInput};
@@ -13,6 +13,12 @@ use crate::pwr_src::sink_ctrl::{Sink, SinkCtrl};
 use telecommands::Telecommand;
 
 const CONTROL_LOOP_TM_INTERVAL: u64 = 500;
+
+// control loop task
+#[embassy_executor::task]
+pub async fn ctrl_thread(mut control_loop: ControlLoop<'static>) {
+    loop { control_loop.run().await; }
+}
 
 pub struct ControlLoop<'d> {
     source_flip_flop: DFlipFlop<'d>,
@@ -81,7 +87,7 @@ impl<'d> ControlLoop<'d> {
 
         let tm_data = Vec::from_array([bitmap]);
         self.tm_sender
-            .send((telemetry::eps::EnableBitmap::ID, tm_data))
+            .send((telemetry::eps::EnableBitmap.id(), tm_data))
             .await;
     }
 

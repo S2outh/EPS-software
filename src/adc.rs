@@ -1,16 +1,27 @@
 mod factory_calibrated_values;
 mod util;
 
+use embassy_time::Timer;
 use util::Sortable;
 
 use derive_more::Constructor;
 use embassy_stm32::{
     Peri,
     adc::{Adc, AdcChannel, AnyAdcChannel, RxDma, SampleTime},
-    peripherals::ADC1,
+    peripherals::{ADC1, DMA1_CH1},
 };
 use embassy_sync::watch::DynSender;
 use heapless::Vec;
+
+// Adc reading task
+#[embassy_executor::task]
+pub async fn adc_thread(mut adc: AdcCtrl<'static, 'static, DMA1_CH1, 4>) {
+    const ADC_LOOP_LEN_MS: u64 = 50;
+    loop {
+        adc.run().await;
+        Timer::after_millis(ADC_LOOP_LEN_MS).await;
+    }
+}
 
 #[derive(Constructor)]
 pub struct AdcCtrlChannel<'a> {

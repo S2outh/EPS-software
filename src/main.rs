@@ -8,6 +8,7 @@
 
 mod adc;
 mod control_loop;
+mod can_config;
 #[allow(dead_code)]
 mod pwr_src;
 
@@ -28,7 +29,7 @@ use embassy_stm32::{
     Config,
     adc::{Adc, AdcChannel},
     bind_interrupts,
-    can::{self, CanConfigurator, RxBuf, TxBuf},
+    can::{self, BufferedFdCanReceiver, BufferedFdCanSender, CanConfigurator, RxFdBuf, TxFdBuf, frame::FdFrame},
     gpio::{Level, Output, Speed},
     i2c::{self, I2c, Master},
     mode::Async,
@@ -42,9 +43,7 @@ use embassy_time::Timer;
 use static_cell::StaticCell;
 use tmtc_definitions::{TMValue, DynTelemetryDefinition, telemetry};
 
-use crate::{adc::AdcCtrlChannel, control_loop::telecommands::Telecommand, pwr_src::{aux_pwr, battery}};
-
-use rodos_can_interface::{RodosCanInterface, receiver::RodosCanReceiver, sender::RodosCanSender};
+use crate::{adc::AdcCtrlChannel, can_config::CanPeriphConfig, control_loop::telecommands::Telecommand, pwr_src::{aux_pwr, battery}};
 
 use {defmt_rtt as _, panic_probe as _};
 
@@ -91,16 +90,11 @@ static CMDC: StaticCell<Channel<ThreadModeRawMutex, Telecommand, CMD_CHANNEL_BUF
 static I2C: StaticCell<Mutex<ThreadModeRawMutex, I2c<'static, Async, Master>>> = StaticCell::new();
 
 // can configuration
-const RODOS_DEVICE_ID: u8 = 0x02;
-
 const RX_BUF_SIZE: usize = 500;
 const TX_BUF_SIZE: usize = 30;
 
-const RODOS_MAX_RAW_MSG_LEN: usize = 32;
-const NUMBER_OF_SENDING_DEVICES: usize = 4;
-
-static RX_BUF: StaticCell<embassy_stm32::can::RxBuf<RX_BUF_SIZE>> = StaticCell::new();
-static TX_BUF: StaticCell<embassy_stm32::can::TxBuf<TX_BUF_SIZE>> = StaticCell::new();
+static RX_BUF: StaticCell<RxFdBuf<RX_BUF_SIZE>> = StaticCell::new();
+static TX_BUF: StaticCell<TxFdBuf<TX_BUF_SIZE>> = StaticCell::new();
 
 /// Watchdog petting task
 #[embassy_executor::task]
@@ -123,14 +117,15 @@ pub async fn internal_temp_thread(tm_sender: DynamicSender<'static, EpsTelem>, m
     }
 }
 
-type EpsTelem = (u32, Vec<u8, 2>);
+type EpsTelem = (u16, Vec<u8, 2>);
 // tm sending task
 #[embassy_executor::task]
-pub async fn tm_thread(mut can_sender: RodosCanSender, tm_channel: Receiver<'static, ThreadModeRawMutex, EpsTelem, TM_CHANNEL_BUF_SIZE>) {
+pub async fn tm_thread(mut can_sender: BufferedFdCanSender, tm_channel: Receiver<'static, ThreadModeRawMutex, EpsTelem, TM_CHANNEL_BUF_SIZE>) {
     loop {
         let (id, value) = tm_channel.receive().await;
-        if let Err(e) = can_sender.send(id as u16, &value).await {
-            error!("error sending can message: {}", e);
+        match FdFrame::new_standard(id, &value) {
+            Ok(frame) => can_sender.write(frame).await,
+            Err(e) => error!("error constructing can message: {}", e),
         }
     }
 }
@@ -138,13 +133,13 @@ pub async fn tm_thread(mut can_sender: RodosCanSender, tm_channel: Receiver<'sta
 // tc receiving task
 #[embassy_executor::task]
 pub async fn tc_thread(
-    mut can_receiver: RodosCanReceiver<NUMBER_OF_SENDING_DEVICES, RODOS_MAX_RAW_MSG_LEN>,
+    can_receiver: BufferedFdCanReceiver,
     tc_channel: Sender<'static, ThreadModeRawMutex, Telecommand, TM_CHANNEL_BUF_SIZE>
     ) {
     loop {
         match can_receiver.receive().await {
-            Ok(frame) => {
-                match Telecommand::parse(frame.data()) {
+            Ok(envelope) => {
+                match Telecommand::parse(envelope.frame.data()) {
                     Ok(cmd) => tc_channel.send(cmd).await,
                     Err(e) => error!("error parsing tc {}", e),
                 }
@@ -255,19 +250,17 @@ async fn main(spawner: Spawner) {
     let _can_standby = Output::new(p.PA10, Level::Low, Speed::Low);
     //let _can_2_standby = Output::new(p.PB2, Level::High, Speed::Low);
 
-    // can setup
-    let can_configurator = CanConfigurator::new(p.FDCAN1, p.PA11, p.PA12, Irqs);
-    let mut rodos_can_configurator = RodosCanInterface::new(can_configurator, RODOS_DEVICE_ID);
+    // -- CAN configuration
+    let mut can_configurator = CanPeriphConfig::new(CanConfigurator::new(p.FDCAN1, p.PA11, p.PA12, Irqs));
 
-    rodos_can_configurator
-        .set_bitrate(1_000_000)
-        .add_receive_topic(tmtc_definitions::telecommands::Telecommand.id() as u16, None)
+    can_configurator
+        .add_receive_topic(tmtc_definitions::telecommands::Telecommand.id())
         .unwrap();
 
-    let (can_receiver, can_sender, _interface) = rodos_can_configurator.activate(
-        TX_BUF.init(TxBuf::<TX_BUF_SIZE>::new()),
-        RX_BUF.init(RxBuf::<RX_BUF_SIZE>::new()),
-    ).split_buffered();
+    let can_interface = can_configurator.activate(
+        TX_BUF.init(TxFdBuf::<TX_BUF_SIZE>::new()),
+        RX_BUF.init(RxFdBuf::<RX_BUF_SIZE>::new()),
+    );
 
     // Main control loop setup
     let control_loop = ControlLoop::spawn(
@@ -287,8 +280,8 @@ async fn main(spawner: Spawner) {
     spawner.must_spawn(aux_pwr::aux_pwr_thread(aux_pwr));
 
     spawner.must_spawn(internal_temp_thread(tm_channel.dyn_sender(), internal_temperature_watch.dyn_receiver().unwrap()));
-    spawner.must_spawn(tm_thread(can_sender, tm_channel.receiver()));
-    spawner.must_spawn(tc_thread(can_receiver, cmd_channel.sender()));
+    spawner.must_spawn(tm_thread(can_interface.writer(), tm_channel.receiver()));
+    spawner.must_spawn(tc_thread(can_interface.reader(), cmd_channel.sender()));
     
     // wait until all other threads finished (never)
     core::future::pending::<()>().await;

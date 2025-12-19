@@ -5,12 +5,11 @@ use embassy_stm32::{
 };
 use embassy_sync::{channel::DynamicSender, watch::DynReceiver};
 use embassy_time::Timer;
-use heapless::Vec;
 use tmp100_drv::Tmp100;
 
-use south_common::{DynTelemetryDefinition, TMValue};
+use south_common::DynTelemetryDefinition;
 
-use crate::EpsTelem;
+use crate::EpsTMContainer;
 
 const ERROR_TMP: i16 = i16::MIN;
 
@@ -27,7 +26,7 @@ pub async fn battery_thread(mut battery: Battery<'static, 'static>) {
 pub struct Battery<'a, 'd> {
     temp_probe: Option<Tmp100<'a, I2c<'d, Async, Master>>>,
     adc_recv: DynReceiver<'a, i16>,
-    tm_sender: DynamicSender<'a, EpsTelem>,
+    tm_sender: DynamicSender<'a, EpsTMContainer>,
     temp_topic: &'static dyn DynTelemetryDefinition,
     voltage_topic: &'static dyn DynTelemetryDefinition,
 }
@@ -36,7 +35,7 @@ impl<'a, 'd> Battery<'a, 'd> {
     pub async fn new(
         temp_probe: Option<Tmp100<'a, I2c<'d, Async, Master>>>,
         adc_recv: DynReceiver<'a, i16>,
-        tm_sender: DynamicSender<'a, EpsTelem>,
+        tm_sender: DynamicSender<'a, EpsTMContainer>,
         temp_topic: &'static dyn DynTelemetryDefinition,
         voltage_topic: &'static dyn DynTelemetryDefinition,
     ) -> Self {
@@ -55,10 +54,10 @@ impl<'a, 'd> Battery<'a, 'd> {
         self.adc_recv.get().await
     }
     pub async fn run(&mut self) {
-        let tm_data = Vec::from_array(self.get_temperature().await.unwrap_or(ERROR_TMP).to_bytes());
-        self.tm_sender.send((self.temp_topic.id(), tm_data)).await;
+        let container = EpsTMContainer::new(self.temp_topic, &self.get_temperature().await.unwrap_or(ERROR_TMP)).unwrap();
+        self.tm_sender.send(container).await;
 
-        let tm_data = Vec::from_array(self.get_voltage().await.to_bytes());
-        self.tm_sender.send((self.temp_topic.id(), tm_data)).await;
+        let container = EpsTMContainer::new(self.voltage_topic, &self.get_voltage().await).unwrap();
+        self.tm_sender.send(container).await;
     }
 }

@@ -13,7 +13,6 @@ mod pwr_src;
 
 use adc::AdcCtrl;
 use control_loop::ControlLoop;
-use heapless::Vec;
 use pwr_src::{
     aux_pwr::AuxPwr,
     battery::{Battery, tmp100_drv::*},
@@ -40,7 +39,7 @@ use embassy_stm32::{
 use embassy_sync::{blocking_mutex::raw::ThreadModeRawMutex, channel::{Channel, DynamicSender, Receiver, Sender}, mutex::Mutex, watch::{DynReceiver, Watch}};
 use embassy_time::Timer;
 use static_cell::StaticCell;
-use south_common::{TMValue, DynTelemetryDefinition, telemetry, telecommands, can_config::CanPeriphConfig};
+use south_common::{DynTelemetryDefinition, telemetry_container, TelemetryContainer, telemetry::eps as tm, telecommands, can_config::CanPeriphConfig};
 
 use crate::{adc::AdcCtrlChannel, control_loop::telecommands::Telecommand, pwr_src::{aux_pwr, battery}};
 
@@ -74,6 +73,9 @@ fn get_rcc_config() -> rcc::Config {
     rcc_config
 }
 
+// TM container
+type EpsTMContainer = telemetry_container!(tm);
+
 // static concurrency sync management types
 static ITW: StaticCell<Watch<ThreadModeRawMutex, i16, 1>> = StaticCell::new();
 static B1W: StaticCell<Watch<ThreadModeRawMutex, i16, 1>> = StaticCell::new();
@@ -82,7 +84,7 @@ static APW: StaticCell<Watch<ThreadModeRawMutex, i16, 1>> = StaticCell::new();
 
 const TM_CHANNEL_BUF_SIZE: usize = 5;
 const CMD_CHANNEL_BUF_SIZE: usize = 5;
-static TMC: StaticCell<Channel<ThreadModeRawMutex, EpsTelem, TM_CHANNEL_BUF_SIZE>> = StaticCell::new();
+static TMC: StaticCell<Channel<ThreadModeRawMutex, EpsTMContainer, TM_CHANNEL_BUF_SIZE>> = StaticCell::new();
 static CMDC: StaticCell<Channel<ThreadModeRawMutex, Telecommand, CMD_CHANNEL_BUF_SIZE>> = StaticCell::new();
 
 // static peripherals
@@ -106,23 +108,22 @@ async fn petter(mut watchdog: IndependentWatchdog<'static, IWDG>) {
 
 // Internal temperature tm task
 #[embassy_executor::task]
-pub async fn internal_temp_thread(tm_sender: DynamicSender<'static, EpsTelem>, mut temp_receiver: DynReceiver<'static, i16>) {
+pub async fn internal_temp_thread(tm_sender: DynamicSender<'static, EpsTMContainer>, mut temp_receiver: DynReceiver<'static, i16>) {
     const INTERNAL_TEMP_LOOP_LEN_MS: u64 = 2000;
     loop {
-        let tm_data = Vec::from_array(temp_receiver.get().await.to_bytes());
-        tm_sender.send((telemetry::eps::InternalTemperature.id(), tm_data)).await;
+        let container = EpsTMContainer::new(&tm::InternalTemperature, &temp_receiver.get().await).unwrap();
+        tm_sender.send(container).await;
 
         Timer::after_millis(INTERNAL_TEMP_LOOP_LEN_MS).await;
     }
 }
 
-type EpsTelem = (u16, Vec<u8, 2>);
 // tm sending task
 #[embassy_executor::task]
-pub async fn tm_thread(mut can_sender: BufferedFdCanSender, tm_channel: Receiver<'static, ThreadModeRawMutex, EpsTelem, TM_CHANNEL_BUF_SIZE>) {
+pub async fn tm_thread(mut can_sender: BufferedFdCanSender, tm_channel: Receiver<'static, ThreadModeRawMutex, EpsTMContainer, TM_CHANNEL_BUF_SIZE>) {
     loop {
-        let (id, value) = tm_channel.receive().await;
-        match FdFrame::new_standard(id, &value) {
+        let container = tm_channel.receive().await;
+        match FdFrame::new_standard(container.id(), container.bytes()) {
             Ok(frame) => can_sender.write(frame).await,
             Err(e) => error!("error constructing can message: {}", e),
         }
@@ -222,8 +223,8 @@ async fn main(spawner: Spawner) {
         bat_1_tmp.ok(),
         bat_1_watch.dyn_receiver().unwrap(),
         tm_channel.dyn_sender(),
-        &telemetry::eps::Bat1Temperature,
-        &telemetry::eps::Bat1Voltage,
+        &tm::Bat1Temperature,
+        &tm::Bat1Voltage,
     ).await;
 
     // second battery
@@ -234,8 +235,8 @@ async fn main(spawner: Spawner) {
         bat_2_tmp.ok(),
         bat_2_watch.dyn_receiver().unwrap(),
         tm_channel.dyn_sender(),
-        &telemetry::eps::Bat2Temperature,
-        &telemetry::eps::Bat2Voltage,
+        &tm::Bat2Temperature,
+        &tm::Bat2Voltage,
     ).await;
 
     // aux power

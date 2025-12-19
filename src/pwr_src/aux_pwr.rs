@@ -1,10 +1,9 @@
 use embassy_sync::{channel::DynamicSender, watch::DynReceiver};
 
 use embassy_time::Timer;
-use heapless::Vec;
-use south_common::{TMValue, DynTelemetryDefinition, telemetry};
+use south_common::telemetry::eps as tm;
 
-use crate::EpsTelem;
+use crate::EpsTMContainer;
 
 // Aux pwr task
 #[embassy_executor::task]
@@ -18,13 +17,13 @@ pub async fn aux_pwr_thread(mut aux_pwr: AuxPwr<'static>) {
 
 pub struct AuxPwr<'a> {
     adc_recv: DynReceiver<'a, i16>,
-    tm_sender: DynamicSender<'a, EpsTelem>
+    tm_sender: DynamicSender<'a, EpsTMContainer>
 }
 
 impl<'a> AuxPwr<'a> {
     pub async fn new(
         adc_recv: DynReceiver<'a, i16>,
-        tm_sender: DynamicSender<'a, EpsTelem>
+        tm_sender: DynamicSender<'a, EpsTMContainer>
     ) -> Self {
         Self {
             adc_recv,
@@ -35,7 +34,7 @@ impl<'a> AuxPwr<'a> {
         self.adc_recv.get().await
     }
     pub async fn run(&mut self) {
-        let tm_data = Vec::from_array(self.get_voltage().await.to_bytes());
-        self.tm_sender.send((telemetry::eps::AuxPowerVoltage.id(), tm_data)).await;
+        let container = EpsTMContainer::new(&tm::AuxPowerVoltage, &self.get_voltage().await).unwrap();
+        self.tm_sender.send(container).await;
     }
 }

@@ -4,10 +4,9 @@ use defmt::info;
 use embassy_futures::select::{Either, select};
 use embassy_sync::channel::{DynamicReceiver, DynamicSender};
 use embassy_time::Timer;
-use heapless::Vec;
-use south_common::{DynTelemetryDefinition, telemetry};
+use south_common::telemetry::eps as tm;
 
-use crate::EpsTelem;
+use crate::EpsTMContainer;
 use crate::pwr_src::d_flip_flop::{DFlipFlop, FlipFlopInput};
 use crate::pwr_src::sink_ctrl::{Sink, SinkCtrl};
 use telecommands::Telecommand;
@@ -24,14 +23,14 @@ pub struct ControlLoop<'d> {
     source_flip_flop: DFlipFlop<'d>,
     sink_ctrl: SinkCtrl<'d>,
     cmd_receiver: DynamicReceiver<'d, Telecommand>,
-    tm_sender: DynamicSender<'d, EpsTelem>
+    tm_sender: DynamicSender<'d, EpsTMContainer>
 }
 impl<'d> ControlLoop<'d> {
     pub fn spawn(
         source_flip_flop: DFlipFlop<'d>,
         sink_ctrl: SinkCtrl<'d>,
         cmd_receiver: DynamicReceiver<'d, Telecommand>,
-        tm_sender: DynamicSender<'d, EpsTelem>
+        tm_sender: DynamicSender<'d, EpsTMContainer>
     ) -> Self {
         Self {
             source_flip_flop,
@@ -85,10 +84,8 @@ impl<'d> ControlLoop<'d> {
             | (self.sink_ctrl.is_enabled(Sink::RocketLST) as u8) << 3
             | (self.sink_ctrl.is_enabled(Sink::RocketHD) as u8) << 4;
 
-        let tm_data = Vec::from_array([bitmap]);
-        self.tm_sender
-            .send((telemetry::eps::EnableBitmap.id(), tm_data))
-            .await;
+        let container = EpsTMContainer::new(&tm::EnableBitmap, &bitmap).unwrap();
+        self.tm_sender.send(container).await;
     }
 
     pub async fn run(&mut self) {

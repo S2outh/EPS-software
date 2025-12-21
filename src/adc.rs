@@ -32,9 +32,9 @@ pub struct AdcCtrlChannel<'a> {
 
 pub mod conversion {
     use super::factory_calibrated_values::FactoryCalibratedValues;
-    use once_cell::sync::Lazy;
+    use embassy_sync::lazy_lock::LazyLock;
 
-    static CALIB: Lazy<FactoryCalibratedValues> = Lazy::new(|| FactoryCalibratedValues::new());
+    static CALIB: LazyLock<FactoryCalibratedValues> = LazyLock::new(|| FactoryCalibratedValues::new());
 
     // datasheet reference conditions
     const VREF_10MV: i32 = 3_30;
@@ -53,9 +53,10 @@ pub mod conversion {
     pub fn calculate_temperature_tenth_deg(measurement: u16) -> i16 {
         let temp_measurement_x10 = 10 * measurement as i32;
         let temp_calibrated_measurement = temp_measurement_x10 * VREF_10MV / VREF_CALIB_10MV;
+        let calib = CALIB.get();
         let temp_tenth_deg = TS_REL_VAL_TENTH_DEG
-            * (temp_calibrated_measurement - CALIB.ts_cal_1_x10)
-            / CALIB.ts_cal_rel_x10
+            * (temp_calibrated_measurement - calib.ts_cal_1_x10)
+            / calib.ts_cal_rel_x10
             + TS_1_VAL_TENTH_DEG;
         temp_tenth_deg as i16
     }

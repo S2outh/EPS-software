@@ -1,6 +1,7 @@
 pub mod telecommands;
 
 use defmt::info;
+use crate::bitflags;
 use embassy_futures::select::{Either, select};
 use embassy_sync::channel::{DynamicReceiver, DynamicSender};
 use embassy_time::Timer;
@@ -12,6 +13,17 @@ use crate::pwr_src::sink_ctrl::{Sink, SinkCtrl};
 use telecommands::Telecommand;
 
 const CONTROL_LOOP_TM_INTERVAL: u64 = 500;
+
+bitflags! {
+    pub struct Enabled: u8 {
+        const BAT1      = 1 << 0;
+        const BAT2      = 1 << 1;
+        const AUXPWR    = 1 << 2;
+        const ROCKETLST = 1 << 3;
+        const SENSORUPP = 1 << 4;
+        const ROCKETHD  = 1 << 5;
+    }
+}
 
 // control loop task
 #[embassy_executor::task]
@@ -25,6 +37,7 @@ pub struct ControlLoop<'d> {
     cmd_receiver: DynamicReceiver<'d, Telecommand>,
     tm_sender: DynamicSender<'d, EpsTMContainer>
 }
+
 impl<'d> ControlLoop<'d> {
     pub fn spawn(
         source_flip_flop: DFlipFlop<'d>,
@@ -78,13 +91,15 @@ impl<'d> ControlLoop<'d> {
         }
     }
     async fn send_state(&mut self) {
-        let bitmap: u8 = self.source_flip_flop.is_enabled(FlipFlopInput::Bat1) as u8
-            | (self.source_flip_flop.is_enabled(FlipFlopInput::AuxPwr) as u8) << 1
-            | (self.sink_ctrl.is_enabled(Sink::Mainboard) as u8) << 2
-            | (self.sink_ctrl.is_enabled(Sink::RocketLST) as u8) << 3
-            | (self.sink_ctrl.is_enabled(Sink::RocketHD) as u8) << 4;
+        let mut bitmap = Enabled::empty();
+        bitmap.set(Enabled::BAT1, self.source_flip_flop.is_enabled(FlipFlopInput::Bat1));
+        bitmap.set(Enabled::BAT2, self.source_flip_flop.is_enabled(FlipFlopInput::Bat2));
+        bitmap.set(Enabled::AUXPWR, self.source_flip_flop.is_enabled(FlipFlopInput::AuxPwr));
+        bitmap.set(Enabled::ROCKETLST, self.sink_ctrl.is_enabled(Sink::RocketLST));
+        bitmap.set(Enabled::SENSORUPP, self.sink_ctrl.is_enabled(Sink::SensorUpper));
+        bitmap.set(Enabled::ROCKETHD, self.sink_ctrl.is_enabled(Sink::RocketHD));
 
-        let container = EpsTMContainer::new(&tm::EnableBitmap, &bitmap).unwrap();
+        let container = EpsTMContainer::new(&tm::EnableBitmap, &bitmap.bits()).unwrap();
         self.tm_sender.send(container).await;
     }
 

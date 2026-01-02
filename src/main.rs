@@ -4,7 +4,8 @@
 #![feature(type_alias_impl_trait)]
 #![feature(iter_collect_into)]
 #![feature(iterator_try_collect)]
-#![feature(generic_const_exprs)]
+#![allow(incomplete_features)]
+#![feature(generic_const_exprs)] // This feature is incomplete but beeing used in a benign context
 
 mod adc;
 mod control_loop;
@@ -39,7 +40,7 @@ use embassy_stm32::{
 use embassy_sync::{blocking_mutex::raw::ThreadModeRawMutex, channel::{Channel, DynamicSender, Receiver, Sender}, mutex::Mutex, watch::{DynReceiver, Watch}};
 use embassy_time::Timer;
 use static_cell::StaticCell;
-use south_common::{DynTelemetryDefinition, telemetry_container, TelemetryContainer, telemetry::eps as tm, telecommands, can_config::CanPeriphConfig};
+use south_common::{TelemetryDefinition, telemetry_container, TelemetryContainer, telemetry::eps as tm, telecommands, can_config::CanPeriphConfig};
 
 use crate::{adc::AdcCtrlChannel, control_loop::telecommands::Telecommand, pwr_src::{aux_pwr, battery}};
 

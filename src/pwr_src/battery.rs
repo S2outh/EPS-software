@@ -7,7 +7,7 @@ use embassy_sync::{channel::DynamicSender, watch::DynReceiver};
 use embassy_time::Timer;
 use tmp100_drv::Tmp100;
 
-use south_common::DynTelemetryDefinition;
+use south_common::TelemetryDefinition;
 
 use crate::EpsTMContainer;
 
@@ -27,8 +27,8 @@ pub struct Battery<'a, 'd> {
     temp_probe: Option<Tmp100<'a, I2c<'d, Async, Master>>>,
     adc_recv: DynReceiver<'a, i16>,
     tm_sender: DynamicSender<'a, EpsTMContainer>,
-    temp_topic: &'static dyn DynTelemetryDefinition,
-    voltage_topic: &'static dyn DynTelemetryDefinition,
+    temp_topic: &'static dyn TelemetryDefinition,
+    voltage_topic: &'static dyn TelemetryDefinition,
 }
 
 impl<'a, 'd> Battery<'a, 'd> {
@@ -36,8 +36,8 @@ impl<'a, 'd> Battery<'a, 'd> {
         temp_probe: Option<Tmp100<'a, I2c<'d, Async, Master>>>,
         adc_recv: DynReceiver<'a, i16>,
         tm_sender: DynamicSender<'a, EpsTMContainer>,
-        temp_topic: &'static dyn DynTelemetryDefinition,
-        voltage_topic: &'static dyn DynTelemetryDefinition,
+        temp_topic: &'static dyn TelemetryDefinition,
+        voltage_topic: &'static dyn TelemetryDefinition,
     ) -> Self {
         Self {
             temp_probe,

@@ -60,6 +60,8 @@ impl<'d> ControlLoop<'d> {
                 let old_state = self.source_flip_flop.get_state();
                 self.source_flip_flop.set(state).await;
                 if let Some(time) = time {
+                    // this is blocking and prevents tc during timeout.
+                    // might be good to fix in the future
                     Timer::after_secs(time as u64).await;
                     self.source_flip_flop.set(old_state).await;
                 }
@@ -70,7 +72,7 @@ impl<'d> ControlLoop<'d> {
                 }
                 self.sink_ctrl.enable(sink);
                 if let Some(time) = time {
-                    // this is blocking and prevents tm/tc during timeout.
+                    // this is blocking and prevents tc during timeout.
                     // might be good to fix in the future
                     Timer::after_secs(time as u64).await;
                     self.sink_ctrl.disable(sink);
@@ -82,7 +84,7 @@ impl<'d> ControlLoop<'d> {
                 }
                 self.sink_ctrl.disable(sink);
                 if let Some(time) = time {
-                    // this is blocking and prevents tm/tc during timeout.
+                    // this is blocking and prevents tc during timeout.
                     // might be good to fix in the future
                     Timer::after_secs(time as u64).await;
                     self.sink_ctrl.enable(sink);

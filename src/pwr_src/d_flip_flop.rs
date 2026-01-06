@@ -4,15 +4,7 @@ use embassy_stm32::{
     gpio::{Input, Level, Output, Pin, Pull, Speed},
 };
 use embassy_time::Timer;
-
-#[repr(u8)]
-#[derive(Format, Clone, Copy)]
-pub enum FlipFlopState {
-    On,
-    Bat1,
-    Bat2,
-    AuxPwr,
-}
+use south_common::types::FlipFlopState;
 
 #[repr(u8)]
 #[derive(Format, Clone, Copy)]

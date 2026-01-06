@@ -1,6 +1,3 @@
-pub mod telecommands;
-
-use defmt::info;
 use crate::bitflags;
 use embassy_futures::select::{Either, select};
 use embassy_sync::channel::{DynamicReceiver, DynamicSender};
@@ -9,8 +6,8 @@ use south_common::telemetry::eps as tm;
 
 use crate::EpsTMContainer;
 use crate::pwr_src::d_flip_flop::{DFlipFlop, FlipFlopInput};
-use crate::pwr_src::sink_ctrl::{Sink, SinkCtrl};
-use telecommands::Telecommand;
+use crate::pwr_src::sink_ctrl::SinkCtrl;
+use south_common::types::{Telecommand, EPSCommand, Sink};
 
 const CONTROL_LOOP_TM_INTERVAL: u64 = 500;
 
@@ -54,9 +51,9 @@ impl<'d> ControlLoop<'d> {
     }
 
     async fn handle_cmd(&mut self, telecommand: Telecommand) {
-        info!("cmd: {}", telecommand);
+        let Telecommand::EPS(telecommand) = telecommand else { return };
         match telecommand {
-            Telecommand::SetSource(state, time) => {
+            EPSCommand::SetSource(state, time) => {
                 let old_state = self.source_flip_flop.get_state();
                 self.source_flip_flop.set(state).await;
                 if let Some(time) = time {
@@ -66,7 +63,7 @@ impl<'d> ControlLoop<'d> {
                     self.source_flip_flop.set(old_state).await;
                 }
             }
-            Telecommand::EnableSink(sink, time) => {
+            EPSCommand::EnableSink(sink, time) => {
                 if self.sink_ctrl.is_enabled(sink) {
                     return;
                 }
@@ -78,7 +75,7 @@ impl<'d> ControlLoop<'d> {
                     self.sink_ctrl.disable(sink);
                 }
             }
-            Telecommand::DisableSink(sink, time) => {
+            EPSCommand::DisableSink(sink, time) => {
                 if !self.sink_ctrl.is_enabled(sink) {
                     return;
                 }

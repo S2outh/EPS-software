@@ -40,9 +40,9 @@ use embassy_stm32::{
 use embassy_sync::{blocking_mutex::raw::ThreadModeRawMutex, channel::{Channel, DynamicSender, Receiver, Sender}, mutex::Mutex, watch::{DynReceiver, Watch}};
 use embassy_time::Timer;
 use static_cell::StaticCell;
-use south_common::{TelemetryDefinition, telemetry_container, TelemetryContainer, telemetry::eps as tm, telecommands, can_config::CanPeriphConfig};
+use south_common::{TMValue, TelemetryContainer, TelemetryDefinition, can_config::CanPeriphConfig, telecommands, telemetry::eps as tm, telemetry_container, types::Telecommand};
 
-use crate::{adc::AdcCtrlChannel, control_loop::telecommands::Telecommand, pwr_src::{aux_pwr, battery}};
+use crate::{adc::AdcCtrlChannel, pwr_src::{aux_pwr, battery}};
 
 use {defmt_rtt as _, panic_probe as _};
 
@@ -140,9 +140,9 @@ pub async fn tc_thread(
     loop {
         match can_receiver.receive().await {
             Ok(envelope) => {
-                match Telecommand::parse(envelope.frame.data()) {
+                match Telecommand::from_bytes(envelope.frame.data()) {
                     Ok(cmd) => tc_channel.send(cmd).await,
-                    Err(e) => error!("error parsing tc {}", e),
+                    Err(_) => error!("error parsing tc"),
                 }
             }
             Err(e) => error!("error in frame! {}", e),

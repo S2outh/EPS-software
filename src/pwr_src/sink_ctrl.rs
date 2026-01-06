@@ -1,17 +1,8 @@
-use defmt::Format;
 use embassy_stm32::{
     Peri,
     gpio::{Level, Output, Pin, Speed},
 };
-
-#[repr(u8)]
-#[derive(Format, Clone, Copy)]
-pub enum Sink {
-    RocketLST,
-    SensorUpper,
-    GPS,
-    RocketHD,
-}
+use south_common::types::Sink;
 
 pub struct SinkCtrl<'d> {
     lst_enable: Output<'d>,

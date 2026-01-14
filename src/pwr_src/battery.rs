@@ -44,7 +44,7 @@ impl<'a, 'd> Battery<'a, 'd> {
             adc_recv,
             tm_sender,
             temp_topic,
-            voltage_topic
+            voltage_topic,
         }
     }
     async fn get_temperature(&mut self) -> Option<i16> {
@@ -54,7 +54,11 @@ impl<'a, 'd> Battery<'a, 'd> {
         self.adc_recv.get().await
     }
     pub async fn run(&mut self) {
-        let container = EpsTMContainer::new(self.temp_topic, &self.get_temperature().await.unwrap_or(ERROR_TMP)).unwrap();
+        let container = EpsTMContainer::new(
+            self.temp_topic,
+            &self.get_temperature().await.unwrap_or(ERROR_TMP),
+        )
+        .unwrap();
         self.tm_sender.send(container).await;
 
         let container = EpsTMContainer::new(self.voltage_topic, &self.get_voltage().await).unwrap();

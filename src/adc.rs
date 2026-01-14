@@ -34,7 +34,8 @@ pub mod conversion {
     use super::factory_calibrated_values::FactoryCalibratedValues;
     use embassy_sync::lazy_lock::LazyLock;
 
-    static CALIB: LazyLock<FactoryCalibratedValues> = LazyLock::new(|| FactoryCalibratedValues::new());
+    static CALIB: LazyLock<FactoryCalibratedValues> =
+        LazyLock::new(|| FactoryCalibratedValues::new());
 
     // datasheet reference conditions
     const VREF_10MV: i32 = 3_30;

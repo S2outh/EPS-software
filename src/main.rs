@@ -28,7 +28,10 @@ use embassy_stm32::{
     Config,
     adc::{Adc, AdcChannel, AdcConfig},
     bind_interrupts,
-    can::{self, BufferedFdCanReceiver, BufferedFdCanSender, CanConfigurator, RxFdBuf, TxFdBuf, frame::FdFrame},
+    can::{
+        self, BufferedFdCanReceiver, BufferedFdCanSender, CanConfigurator, RxFdBuf, TxFdBuf,
+        frame::FdFrame,
+    },
     gpio::{Level, Output, Speed},
     i2c::{self, I2c, Master},
     mode::Async,
@@ -37,12 +40,23 @@ use embassy_stm32::{
     time::khz,
     wdg::IndependentWatchdog,
 };
-use embassy_sync::{blocking_mutex::raw::ThreadModeRawMutex, channel::{Channel, DynamicSender, Receiver, Sender}, mutex::Mutex, watch::{DynReceiver, Watch}};
+use embassy_sync::{
+    blocking_mutex::raw::ThreadModeRawMutex,
+    channel::{Channel, DynamicSender, Receiver, Sender},
+    mutex::Mutex,
+    watch::{DynReceiver, Watch},
+};
 use embassy_time::Timer;
+use south_common::{
+    TMValue, TelemetryContainer, TelemetryDefinition, can_config::CanPeriphConfig, telecommands,
+    telemetry::eps as tm, telemetry_container, types::Telecommand,
+};
 use static_cell::StaticCell;
-use south_common::{TMValue, TelemetryContainer, TelemetryDefinition, can_config::CanPeriphConfig, telecommands, telemetry::eps as tm, telemetry_container, types::Telecommand};
 
-use crate::{adc::AdcCtrlChannel, pwr_src::{aux_pwr, battery}};
+use crate::{
+    adc::AdcCtrlChannel,
+    pwr_src::{aux_pwr, battery},
+};
 
 use {defmt_rtt as _, panic_probe as _};
 
@@ -52,7 +66,6 @@ bind_interrupts!(struct Irqs {
     TIM16_FDCAN_IT0 => can::IT0InterruptHandler<FDCAN1>;
     TIM17_FDCAN_IT1 => can::IT1InterruptHandler<FDCAN1>;
 });
-
 
 /// config rcc for higher sysclock and fdcan periph clock to make sure
 /// all messages can be received without package drop
@@ -85,8 +98,10 @@ static APW: StaticCell<Watch<ThreadModeRawMutex, i16, 1>> = StaticCell::new();
 
 const TM_CHANNEL_BUF_SIZE: usize = 5;
 const CMD_CHANNEL_BUF_SIZE: usize = 5;
-static TMC: StaticCell<Channel<ThreadModeRawMutex, EpsTMContainer, TM_CHANNEL_BUF_SIZE>> = StaticCell::new();
-static CMDC: StaticCell<Channel<ThreadModeRawMutex, Telecommand, CMD_CHANNEL_BUF_SIZE>> = StaticCell::new();
+static TMC: StaticCell<Channel<ThreadModeRawMutex, EpsTMContainer, TM_CHANNEL_BUF_SIZE>> =
+    StaticCell::new();
+static CMDC: StaticCell<Channel<ThreadModeRawMutex, Telecommand, CMD_CHANNEL_BUF_SIZE>> =
+    StaticCell::new();
 
 // static peripherals
 static I2C: StaticCell<Mutex<ThreadModeRawMutex, I2c<'static, Async, Master>>> = StaticCell::new();
@@ -109,10 +124,14 @@ async fn petter(mut watchdog: IndependentWatchdog<'static, IWDG>) {
 
 // Internal temperature tm task
 #[embassy_executor::task]
-pub async fn internal_temp_thread(tm_sender: DynamicSender<'static, EpsTMContainer>, mut temp_receiver: DynReceiver<'static, i16>) {
+pub async fn internal_temp_thread(
+    tm_sender: DynamicSender<'static, EpsTMContainer>,
+    mut temp_receiver: DynReceiver<'static, i16>,
+) {
     const INTERNAL_TEMP_LOOP_LEN_MS: u64 = 2000;
     loop {
-        let container = EpsTMContainer::new(&tm::InternalTemperature, &temp_receiver.get().await).unwrap();
+        let container =
+            EpsTMContainer::new(&tm::InternalTemperature, &temp_receiver.get().await).unwrap();
         tm_sender.send(container).await;
 
         Timer::after_millis(INTERNAL_TEMP_LOOP_LEN_MS).await;
@@ -121,7 +140,10 @@ pub async fn internal_temp_thread(tm_sender: DynamicSender<'static, EpsTMContain
 
 // tm sending task
 #[embassy_executor::task]
-pub async fn tm_thread(mut can_sender: BufferedFdCanSender, tm_channel: Receiver<'static, ThreadModeRawMutex, EpsTMContainer, TM_CHANNEL_BUF_SIZE>) {
+pub async fn tm_thread(
+    mut can_sender: BufferedFdCanSender,
+    tm_channel: Receiver<'static, ThreadModeRawMutex, EpsTMContainer, TM_CHANNEL_BUF_SIZE>,
+) {
     loop {
         let container = tm_channel.receive().await;
         match FdFrame::new_standard(container.id(), container.bytes()) {
@@ -135,21 +157,18 @@ pub async fn tm_thread(mut can_sender: BufferedFdCanSender, tm_channel: Receiver
 #[embassy_executor::task]
 pub async fn tc_thread(
     can_receiver: BufferedFdCanReceiver,
-    tc_channel: Sender<'static, ThreadModeRawMutex, Telecommand, TM_CHANNEL_BUF_SIZE>
-    ) {
+    tc_channel: Sender<'static, ThreadModeRawMutex, Telecommand, TM_CHANNEL_BUF_SIZE>,
+) {
     loop {
         match can_receiver.receive().await {
-            Ok(envelope) => {
-                match Telecommand::from_bytes(envelope.frame.data()) {
-                    Ok(cmd) => tc_channel.send(cmd).await,
-                    Err(_) => error!("error parsing tc"),
-                }
-            }
+            Ok(envelope) => match Telecommand::from_bytes(envelope.frame.data()) {
+                Ok(cmd) => tc_channel.send(cmd).await,
+                Err(_) => error!("error parsing tc"),
+            },
             Err(e) => error!("error in frame! {}", e),
         }
     }
 }
-
 
 /// program entry
 #[embassy_executor::main]
@@ -233,7 +252,8 @@ async fn main(spawner: Spawner) {
         tm_channel.dyn_sender(),
         &tm::Bat1Temperature,
         &tm::Bat1Voltage,
-    ).await;
+    )
+    .await;
 
     // second battery
     let bat_2_tmp = Tmp100::new(temp_sensor_i2c, Resolution::BITS12, Addr0State::Floating)
@@ -245,10 +265,15 @@ async fn main(spawner: Spawner) {
         tm_channel.dyn_sender(),
         &tm::Bat2Temperature,
         &tm::Bat2Voltage,
-    ).await;
+    )
+    .await;
 
     // aux power
-    let aux_pwr = AuxPwr::new(aux_pwr_watch.dyn_receiver().unwrap(), tm_channel.dyn_sender()).await;
+    let aux_pwr = AuxPwr::new(
+        aux_pwr_watch.dyn_receiver().unwrap(),
+        tm_channel.dyn_sender(),
+    )
+    .await;
 
     // debug leds not used at the moment (might disrupt can)
     let _led1 = Output::new(p.PB7, Level::Low, Speed::Low);
@@ -259,7 +284,8 @@ async fn main(spawner: Spawner) {
     //let _can_2_standby = Output::new(p.PB2, Level::High, Speed::Low);
 
     // -- CAN configuration
-    let mut can_configurator = CanPeriphConfig::new(CanConfigurator::new(p.FDCAN1, p.PA11, p.PA12, Irqs));
+    let mut can_configurator =
+        CanPeriphConfig::new(CanConfigurator::new(p.FDCAN1, p.PA11, p.PA12, Irqs));
 
     can_configurator
         .add_receive_topic(telecommands::Telecommand.id())
@@ -287,10 +313,13 @@ async fn main(spawner: Spawner) {
     spawner.must_spawn(battery::battery_thread(bat_2));
     spawner.must_spawn(aux_pwr::aux_pwr_thread(aux_pwr));
 
-    spawner.must_spawn(internal_temp_thread(tm_channel.dyn_sender(), internal_temperature_watch.dyn_receiver().unwrap()));
+    spawner.must_spawn(internal_temp_thread(
+        tm_channel.dyn_sender(),
+        internal_temperature_watch.dyn_receiver().unwrap(),
+    ));
     spawner.must_spawn(tm_thread(can_interface.writer(), tm_channel.receiver()));
     spawner.must_spawn(tc_thread(can_interface.reader(), cmd_channel.sender()));
-    
+
     // wait until all other threads finished (never)
     core::future::pending::<()>().await;
 }

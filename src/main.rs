@@ -87,6 +87,10 @@ fn get_rcc_config() -> rcc::Config {
     rcc_config
 }
 
+// General setup stuff
+const WATCHDOG_TIMEOUT_US: u32 = 300_000;
+const WATCHDOG_PETTING_INTERVAL_US: u32 = WATCHDOG_TIMEOUT_US / 2;
+
 // TM container
 type EpsTMContainer = telemetry_container!(tm);
 
@@ -118,7 +122,7 @@ static TX_BUF: StaticCell<TxFdBuf<TX_BUF_SIZE>> = StaticCell::new();
 async fn petter(mut watchdog: IndependentWatchdog<'static, IWDG>) {
     loop {
         watchdog.pet();
-        Timer::after_millis(200).await;
+        Timer::after_micros(WATCHDOG_PETTING_INTERVAL_US.into()).await;
     }
 }
 
@@ -178,8 +182,8 @@ async fn main(spawner: Spawner) {
     let p = embassy_stm32::init(config);
     info!("Launching");
 
-    // independent watchdog with timeout 300 MS
-    let mut watchdog = IndependentWatchdog::new(p.IWDG, 300_000);
+    // unleash independent watchdog
+    let mut watchdog = IndependentWatchdog::new(p.IWDG, WATCHDOG_TIMEOUT_US);
     watchdog.unleash();
 
     // i2c for temperature sensors

@@ -1,7 +1,7 @@
 mod factory_calibrated_values;
 mod util;
 
-use embassy_time::Timer;
+use embassy_time::{Duration, Instant, Timer};
 use util::Sortable;
 
 use derive_more::Constructor;
@@ -16,10 +16,12 @@ use heapless::Vec;
 // Adc reading task
 #[embassy_executor::task]
 pub async fn adc_thread(mut adc: AdcCtrl<'static, 'static, DMA1_CH1, 4>) {
-    const ADC_LOOP_LEN_MS: u64 = 50;
+    const ADC_LOOP_LEN: Duration = Duration::from_millis(100);
+    let mut loop_time = Instant::now();
     loop {
         adc.run().await;
-        Timer::after_millis(ADC_LOOP_LEN_MS).await;
+        loop_time += ADC_LOOP_LEN;
+        Timer::at(loop_time).await;
     }
 }
 

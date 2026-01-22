@@ -1,15 +1,13 @@
 use crate::bitflags;
 use embassy_futures::select::{Either, select};
 use embassy_sync::channel::{DynamicReceiver, DynamicSender};
-use embassy_time::Timer;
+use embassy_time::{Duration, Instant, Timer};
 use south_common::telemetry::eps as tm;
 
 use crate::EpsTMContainer;
 use crate::pwr_src::d_flip_flop::{DFlipFlop, FlipFlopInput};
 use crate::pwr_src::sink_ctrl::SinkCtrl;
 use south_common::types::{EPSCommand, Sink, Telecommand};
-
-const CONTROL_LOOP_TM_INTERVAL: u64 = 500;
 
 bitflags! {
     pub struct Enabled: u8 {
@@ -22,6 +20,8 @@ bitflags! {
     }
 }
 
+const CTRL_LOOP_TM_INTERVAL: Duration = Duration::from_millis(500);
+
 // control loop task
 #[embassy_executor::task]
 pub async fn ctrl_thread(mut control_loop: ControlLoop<'static>) {
@@ -33,6 +33,7 @@ pub async fn ctrl_thread(mut control_loop: ControlLoop<'static>) {
 pub struct ControlLoop<'d> {
     source_flip_flop: DFlipFlop<'d>,
     sink_ctrl: SinkCtrl<'d>,
+    next_tm: Instant,
     cmd_receiver: DynamicReceiver<'d, Telecommand>,
     tm_sender: DynamicSender<'d, EpsTMContainer>,
 }
@@ -47,13 +48,14 @@ impl<'d> ControlLoop<'d> {
         Self {
             source_flip_flop,
             sink_ctrl,
+            next_tm: Instant::now(),
             cmd_receiver,
             tm_sender,
         }
     }
 
-    async fn handle_cmd(&mut self, telecommand: Telecommand) {
-        let Telecommand::EPS(telecommand) = telecommand else {
+    async fn handle_cmd(&mut self) {
+        let Telecommand::EPS(telecommand) = self.cmd_receiver.receive().await else {
             return;
         };
         match telecommand {
@@ -94,6 +96,8 @@ impl<'d> ControlLoop<'d> {
         }
     }
     async fn send_state(&mut self) {
+        Timer::at(self.next_tm).await;
+
         let mut bitmap = Enabled::empty();
         bitmap.set(
             Enabled::BAT1,
@@ -120,16 +124,13 @@ impl<'d> ControlLoop<'d> {
         let container = EpsTMContainer::new(&tm::EnableBitmap, &bitmap.bits()).unwrap();
         self.tm_sender.send(container).await;
     }
-
     pub async fn run(&mut self) {
-        let event = select(
-            self.cmd_receiver.receive(),
-            Timer::after_millis(CONTROL_LOOP_TM_INTERVAL),
-        )
-        .await;
-        match event {
-            Either::First(cmd) => self.handle_cmd(cmd).await,
-            Either::Second(()) => self.send_state().await,
+        if let Either::First(_) = select(
+            Timer::at(self.next_tm),
+            self.handle_cmd()
+        ).await {
+            self.send_state().await;
+            self.next_tm += CTRL_LOOP_TM_INTERVAL;
         }
     }
 }

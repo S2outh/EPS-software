@@ -1,6 +1,6 @@
 use embassy_sync::{channel::DynamicSender, watch::DynReceiver};
 
-use embassy_time::Timer;
+use embassy_time::{Duration, Instant, Timer};
 use south_common::telemetry::eps as tm;
 
 use crate::EpsTMContainer;
@@ -8,10 +8,12 @@ use crate::EpsTMContainer;
 // Aux pwr task
 #[embassy_executor::task]
 pub async fn aux_pwr_thread(mut aux_pwr: AuxPwr<'static>) {
-    const AUX_LOOP_LEN_MS: u64 = 500;
+    const AUX_LOOP_LEN: Duration = Duration::from_millis(500);
+    let mut loop_time = Instant::now();
     loop {
         aux_pwr.run().await;
-        Timer::after_millis(AUX_LOOP_LEN_MS).await;
+        loop_time += AUX_LOOP_LEN;
+        Timer::at(loop_time).await;
     }
 }
 

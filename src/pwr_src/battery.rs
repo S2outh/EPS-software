@@ -4,7 +4,7 @@ use embassy_stm32::{
     mode::Async,
 };
 use embassy_sync::{channel::DynamicSender, watch::DynReceiver};
-use embassy_time::Timer;
+use embassy_time::{Duration, Instant, Timer};
 use tmp100_drv::Tmp100;
 
 use south_common::TelemetryDefinition;
@@ -14,10 +14,12 @@ use crate::EpsTMContainer;
 // Battery task
 #[embassy_executor::task(pool_size = 2)]
 pub async fn battery_thread(mut battery: Battery<'static, 'static>) {
-    const BTRY_LOOP_LEN_MS: u64 = 500;
+    const BTRY_LOOP_LEN: Duration = Duration::from_millis(500);
+    let mut loop_time = Instant::now();
     loop {
         battery.run().await;
-        Timer::after_millis(BTRY_LOOP_LEN_MS).await;
+        loop_time += BTRY_LOOP_LEN;
+        Timer::at(loop_time).await;
     }
 }
 

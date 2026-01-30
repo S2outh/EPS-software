@@ -1,6 +1,7 @@
 import os
 import pty
 import select
+import signal
 import subprocess
 import time
 from typing import Optional, Iterator
@@ -24,9 +25,61 @@ class ProcessLogStream:
         if self._proc.poll() is None:
             self._proc.terminate()
 
+    def close(self, grace_s: float = 2.0) -> None:
+        """Gracefully stop probe-rs and reap the process so the probe is released."""
+        if self._proc.poll() is None:
+            # Best-effort graceful shutdown (probe-rs attach responds to SIGINT)
+            try:
+                self._proc.send_signal(signal.SIGINT)
+            except Exception:
+                pass
+
+            try:
+                self._proc.wait(timeout=grace_s)
+            except subprocess.TimeoutExpired:
+                # Escalate
+                try:
+                    self._proc.terminate()
+                except Exception:
+                    pass
+                try:
+                    self._proc.wait(timeout=grace_s)
+                except subprocess.TimeoutExpired:
+                    try:
+                        self._proc.kill()
+                    except Exception:
+                        pass
+                    try:
+                        self._proc.wait(timeout=grace_s)
+                    except Exception:
+                        pass
+
+        # Close pipe to release resources
+        try:
+            if self._proc.stdout is not None:
+                self._proc.stdout.close()
+        except Exception:
+            pass
+
+        # Ensure reaped
+        try:
+            self._proc.wait(timeout=1)
+        except Exception:
+            pass
+
     def kill(self) -> None:
+        # Keep kill(), but make it reap
         if self._proc.poll() is None:
             self._proc.kill()
+        try:
+            self._proc.wait(timeout=2)
+        except Exception:
+            pass
+        try:
+            if self._proc.stdout is not None:
+                self._proc.stdout.close()
+        except Exception:
+            pass
 
     def wait(self, timeout_s: Optional[float] = None) -> int:
         return self._proc.wait(timeout=timeout_s)

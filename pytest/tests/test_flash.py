@@ -31,4 +31,4 @@ def test_flash(labgrid_session):
 
     finally:
         # Always stop the subprocess, even on assertion failure
-        stream.kill()
+        stream.close()

@@ -66,7 +66,10 @@
           rustc = rust-toolchain;
         }).buildPackage {
           src = ./.;
-					DEFMT_LOG = "info";
+          FW_VERSION = builtins.getEnv "FW_VERSION";
+          FW_HASH    = builtins.getEnv "FW_HASH";
+
+          DEFMT_LOG = "info";
         };
       }
 

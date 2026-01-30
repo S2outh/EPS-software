@@ -42,15 +42,11 @@ jobs:
       - name: Install Nix
         uses: DeterminateSystems/nix-installer-action@v12
 
-      # Caches /nix/store using GitHub Actions cache (speeds up subsequent builds)
-      - name: Cache Nix store
-        uses: DeterminateSystems/magic-nix-cache-action@v8
-
       - name: Build (nix)
         shell: bash
         run: |
           nix --version
-          nix build --print-build-logs
+          nix build --print-build-logs --impure
 
       # Upload whatever nix build produced. Usually nix build writes a ./result symlink.
       - name: Collect build output

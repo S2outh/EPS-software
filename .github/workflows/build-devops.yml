@@ -6,23 +6,29 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  CARGO_NET_GIT_FETCH_WITH_CLI: "true"
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
     steps:
       - uses: actions/checkout@v4
 
-      - name: Configure git auth for private deps (force HTTPS)
+      - name: Configure git auth for private deps (force PAT over SSH)
         run: |
-          # Any https://github.com/... will be fetched with the PAT
+          # Rewrite ALL GitHub fetches (https + ssh forms) to token-authenticated HTTPS
           git config --global url."https://x-access-token:${{ secrets.GH_READ_TOKEN }}@github.com/".insteadOf "https://github.com/"
 
-          # Rewrite common SSH forms to HTTPS so PAT is used instead of SSH keys
-          git config --global url."https://github.com/".insteadOf "ssh://git@github.com/"
-          git config --global url."https://github.com/".insteadOf "git@github.com:"
+          # SSH forms:
+          git config --global url."https://x-access-token:${{ secrets.GH_READ_TOKEN }}@github.com/".insteadOf "git@github.com:"
+          git config --global url."https://x-access-token:${{ secrets.GH_READ_TOKEN }}@github.com/".insteadOf "ssh://git@github.com/"
+          # Host-with-colon form (as you observed): ssh://git@github.com:ORG/REPO.git
+          git config --global url."https://x-access-token:${{ secrets.GH_READ_TOKEN }}@github.com/".insteadOf "ssh://git@github.com:"
 
-          # Optional: make sure no interactive prompts block CI
+          # Avoid interactive prompts in CI
           git config --global core.askPass true
 
       - name: Use Rust nightly
@@ -30,7 +36,6 @@ jobs:
         with:
           components: rustfmt, clippy
 
-      # Optional but recommended: speed up builds
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
 
@@ -43,8 +48,6 @@ jobs:
 
       - name: Build (release)
         run: cargo +nightly build --release
-        # If you want nightly for everything, you can omit +nightly once the toolchain is set,
-        # but keeping it makes the intent explicit.
 
       - name: Upload firmware artifacts
         uses: actions/upload-artifact@v4

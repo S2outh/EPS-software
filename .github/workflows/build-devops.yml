@@ -22,7 +22,10 @@ jobs:
       - name: Configure git auth for private deps (force PAT over SSH)
         shell: bash
         run: |
-          cat > "$GITHUB_WORKSPACE/.gitconfig" <<'EOF'
+          mkdir -p "$HOME"
+
+          # Create the global git config explicitly
+          cat > "$HOME/.gitconfig" <<EOF
           [url "https://x-access-token:${{ secrets.GH_READ_TOKEN }}@github.com/"]
             insteadOf = https://github.com/
             insteadOf = ssh://git@github.com/
@@ -30,9 +33,7 @@ jobs:
             insteadOf = git@github.com:
           EOF
 
-          echo "GIT_CONFIG_GLOBAL=$GITHUB_WORKSPACE/.gitconfig" >> "$GITHUB_ENV"
-
-          # Optional sanity check (prints the rewrite rules)
+          # Verify rewrites are active
           git config --global --list | sed -n 's/^url\./url./p'
 
       - name: Use Rust nightly

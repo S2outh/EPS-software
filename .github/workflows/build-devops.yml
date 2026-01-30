@@ -98,10 +98,10 @@ jobs:
         shell: bash
         run: |
           mkdir -p pytest
-          cat > pytest/env.yaml <<'EOF'
+          cat > env.yaml <<'EOF'
           ${{ secrets.LABGRID_ENV }}
           EOF
-          chmod 600 pytest/env.yaml
+          chmod 600 env.yaml
 
       - name: Run tests
         shell: bash

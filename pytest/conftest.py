@@ -9,7 +9,7 @@ COORD = os.environ["LG_COORDINATOR"]
 PLACE = "flatsat"
 
 MATCH_LED   = "*/test-indicator-led/NetworkService/led"
-MATCH_EPS = "*eps-probers/NetworkService/probe-eps"
+MATCH_EPS = "*/eps-probers/NetworkService/probe-eps"
 
 def lg(*args, check=True):
     return subprocess.run(

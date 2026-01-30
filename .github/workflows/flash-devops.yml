@@ -57,7 +57,7 @@ jobs:
       - name: Setup probe-rs
         uses: S2outh/setup-probe-rs-action@v1
         with:
-          version: ${{PROBE_RS_VERSION}}
+          version: ${{ env.PROBE_RS_VERSION }}
 
       - name: Write labgrid env.yaml from secret
         shell: bash

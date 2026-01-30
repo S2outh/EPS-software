@@ -32,6 +32,13 @@ jobs:
 
           git config --global --list | sed -n 's/^url\./url./p'
 
+      - name: Generate version
+        run: |
+          ver=$(cargo metadata --no-deps --format-version=1 | jq -r '.packages[0].version')
+          sha=$(git rev-parse --short=7 HEAD)
+          echo "FW_VERSION=v${ver}-${sha}" >> $GITHUB_ENV
+          echo "FW_HASH=${sha}" >> $GITHUB_ENV
+
       - name: Install Nix
         uses: DeterminateSystems/nix-installer-action@v12
 

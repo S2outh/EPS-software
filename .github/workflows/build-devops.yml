@@ -51,7 +51,10 @@ jobs:
           echo "fw_hash=${sha}" >> "$GITHUB_OUTPUT"
 
       - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@v12
+        uses: NixOS/nix-installer-action@main
+        with:
+          extra-conf: |
+            experimental-features = nix-command flake
 
       - name: Build (nix)
         shell: bash

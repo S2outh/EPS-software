@@ -1,3 +1,6 @@
+import os
+
+
 def test_flash(labgrid_session):
     t = labgrid_session
     d = t.get_driver("ProbeRsDriver", name="probe-eps")
@@ -20,7 +23,10 @@ def test_flash(labgrid_session):
         except StopIteration:
             raise AssertionError("no output received from probe-rs")
 
-        assert "Launching" in first_line, f"unexpected first line: {first_line}"
+        fw_version = os.environ.get("FW_VERSION", "no-version")
+        fw_hash = os.environ.get("FW_HASH", "no-hash")
+
+        assert f"Launching: FW version={fw_version} hash={fw_hash}" in first_line, f"unexpected first line: {first_line}"
 
     finally:
         # Always stop the subprocess, even on assertion failure

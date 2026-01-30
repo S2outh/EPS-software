@@ -4,6 +4,10 @@ on:
   push:
     branches: ["devops"]
 
+permissions:
+  contents: read
+  checks: write
+
 env:
   GIT_TERMINAL_PROMPT: "0"
 
@@ -38,6 +42,8 @@ jobs:
           sha=$(git rev-parse --short=7 HEAD)
           echo "FW_VERSION=v${ver}-${sha}" >> $GITHUB_ENV
           echo "FW_HASH=${sha}" >> $GITHUB_ENV
+          echo "fw_version=v${ver}-${sha}" >> "$GITHUB_OUTPUT"
+          echo "fw_hash=${sha}" >> "$GITHUB_OUTPUT"
 
       - name: Install Nix
         uses: DeterminateSystems/nix-installer-action@v12
@@ -67,6 +73,8 @@ jobs:
     needs: build
     runs-on: [ self-hosted, flatsat, hil ]
     env:
+      FW_VERSION: ${{ needs.build.outputs.fw_version }}
+      FW_HASH: ${{ needs.build.outputs.fw_hash }}
       LG_COORDINATOR: labgrid-coordinator:20408
       PROBE_RS_VERSION: v0.31.0
       PROBE_RS_INSTALL_ROOT: /opt/probe-rs

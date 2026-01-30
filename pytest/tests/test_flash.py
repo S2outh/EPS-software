@@ -2,7 +2,7 @@ def test_flash(labgrid_session):
     t = labgrid_session
     d = t.get_driver("ProbeRsDriver", name="probe-eps")
 
-    binary = "eps-software"          # path if not in repo root
+    binary = "fw/eps-software"          # path if not in repo root
 
     print("flashing chip")
     # flash binary

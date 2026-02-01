@@ -62,20 +62,11 @@ jobs:
           nix --version
           nix build --print-build-logs --impure
 
-      # Upload whatever nix build produced. Usually nix build writes a ./result symlink.
-      - name: Collect build output
-        shell: bash
-        run: |
-          rm -rf dist
-          mkdir -p dist
-          # copy the realized output (dereference symlink so artifact contains files)
-          cp -aL result/bin/. dist/
-
       - name: Upload firmware artifacts
         uses: actions/upload-artifact@v4
         with:
           name: firmware
-          path: dist
+          path: result/bin/.
 
   flash:
     needs: build
